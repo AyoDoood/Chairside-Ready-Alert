@@ -1,0 +1,12 @@
+{
+  "label": "Doctor",
+  "server_host": "192.168.1.110",
+  "server_port": 50505,
+  "is_server": false,
+  "manual_peer_ips": "192.168.1.110",
+  "alert_sound": "Bright Chime",
+  "alert_volume": 70,
+  "custom_station_labels": [],
+  "default_targets": [],
+  "theme": "Modern Blue"
+}

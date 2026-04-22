@@ -1,0 +1,5 @@
+{
+  "version": "1.0.0",
+  "release_page_url": "https://github.com/YOUR_ORG/YOUR_REPO/releases/tag/v1.0.0",
+  "release_notes": "Short description of what changed (optional)."
+}
