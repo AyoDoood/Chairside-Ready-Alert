@@ -20,6 +20,7 @@ import webbrowser
 from collections import deque
 import queue
 import socket
+import stat
 import subprocess
 import tempfile
 import threading
@@ -62,6 +63,15 @@ APP_VERSION = "1.0.2"
 # Optional default manifest URL baked into your build; usually leave empty and set
 # update_manifest_url in dental_messenger_config.json or CHAIRSIDE_UPDATE_MANIFEST_URL.
 UPDATE_MANIFEST_URL_BUILTIN = "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/version.json"
+UPDATE_ALLOWED_FILES = {
+    "dental_messenger.py",
+    "install_dental_messenger.ps1",
+    "Install Dental Messenger.bat",
+    "Install Dental Messenger macOS.command",
+    "README-Windows-One-Click.txt",
+    "version.json",
+    "version.json.example",
+}
 DEFAULT_PORT = 50505
 DISCOVERY_PORT = 50506
 BEACON_INTERVAL = 2.5
@@ -1224,7 +1234,8 @@ class DentalMessengerApp:
             return
         menu = pystray.Menu(
             pystray.MenuItem("Send Ready", self._tray_send_ready),
-            pystray.MenuItem("Show Main Window", self._tray_show_main),
+            # Default menu action maps to tray icon double-click on platforms that support it.
+            pystray.MenuItem("Show Main Window", self._tray_show_main, default=True),
             pystray.MenuItem("Hide Main Window", self._tray_hide_main),
             pystray.MenuItem("Check for Updates", self._tray_check_updates),
             pystray.Menu.SEPARATOR,
@@ -1571,7 +1582,7 @@ class DentalMessengerApp:
                         body += f"\n{notes}\n"
                     if messagebox.askyesno(
                         APP_TITLE,
-                        body + "\nInstall this update now (download + replace app file)?",
+                        body + "\nInstall this update now (download + replace update files)?",
                     ):
                         threading.Thread(
                             target=self._download_and_install_update_worker,
@@ -1605,19 +1616,48 @@ class DentalMessengerApp:
         except Exception as exc:
             ui(lambda e=str(exc): messagebox.showerror(APP_TITLE, f"Update check failed:\n{e}"))
 
-    def _manifest_download_info(self, manifest: dict) -> tuple[str, str]:
-        """Return (download_url, sha256). Supports both flat and nested manifest formats."""
-        download_url = str(manifest.get("download_url", "") or "").strip()
-        sha256 = str(manifest.get("sha256", "") or "").strip()
-        if download_url:
-            return download_url, sha256
+    def _manifest_file_entries(self, manifest: dict) -> list[dict]:
+        """
+        Build normalized update entries: [{"path": <relative>, "url": <https>, "sha256": <hex>|""}, ...]
+        Supports:
+        - Flat fields: download_url/sha256 -> dental_messenger.py
+        - files object: {"filename": {"url": "...", "sha256": "..."}, ...}
+        """
+        entries: list[dict] = []
+        flat_url = str(manifest.get("download_url", "") or "").strip()
+        flat_sha = str(manifest.get("sha256", "") or "").strip()
+        if flat_url:
+            entries.append({"path": "dental_messenger.py", "url": flat_url, "sha256": flat_sha})
+
         files = manifest.get("files")
         if isinstance(files, dict):
-            dm = files.get("dental_messenger.py")
-            if isinstance(dm, dict):
-                download_url = str(dm.get("url", "") or "").strip()
-                sha256 = str(dm.get("sha256", "") or "").strip()
-        return download_url, sha256
+            for rel_path, info in files.items():
+                if not isinstance(info, dict):
+                    continue
+                url = str(info.get("url", "") or "").strip()
+                if not url:
+                    continue
+                sha = str(info.get("sha256", "") or "").strip()
+                entries.append({"path": str(rel_path), "url": url, "sha256": sha})
+
+        # Deduplicate by path (later entries win).
+        latest: dict[str, dict] = {}
+        for e in entries:
+            latest[e["path"]] = e
+        normalized: list[dict] = []
+        for rel_path, e in latest.items():
+            rp = str(rel_path or "").strip()
+            if not rp:
+                continue
+            if os.path.isabs(rp) or ".." in rp or "/" in rp or "\\" in rp:
+                raise ValueError(f"Unsafe update path in manifest: {rp!r}")
+            if rp not in UPDATE_ALLOWED_FILES:
+                raise ValueError(f"Update path is not allowed: {rp!r}")
+            normalized.append({"path": rp, "url": e["url"], "sha256": e["sha256"]})
+
+        # Stable order: keep app first so restart prompt is intuitive.
+        normalized.sort(key=lambda x: (0 if x["path"] == "dental_messenger.py" else 1, x["path"]))
+        return normalized
 
     def _download_and_install_update_worker(self, manifest: dict, remote_version: str, release_page_url: str) -> None:
         def ui(fn):
@@ -1627,71 +1667,110 @@ class DentalMessengerApp:
                 pass
 
         try:
-            download_url, expected_sha256 = self._manifest_download_info(manifest)
-            if not download_url:
+            entries = self._manifest_file_entries(manifest)
+            if not entries:
                 def no_url() -> None:
                     if release_page_url:
                         if messagebox.askyesno(
                             APP_TITLE,
-                            "This update manifest has no download_url for automatic install.\n\n"
+                            "This update manifest has no file URLs for automatic install.\n\n"
                             "Open the release page instead?",
                         ):
                             webbrowser.open(release_page_url)
                     else:
                         messagebox.showerror(
                             APP_TITLE,
-                            "This update manifest has no download_url.\n"
-                            "Add download_url (and optional sha256) to enable automatic updates.",
+                            "This update manifest has no update file URLs.\n"
+                            "Add download_url or files.{name}.url (and optional sha256) to enable automatic updates.",
                         )
                 ui(no_url)
                 return
 
-            payload = _download_bytes(download_url)
-            if expected_sha256:
-                got = _sha256_hex(payload).lower()
-                expected = expected_sha256.lower()
-                if got != expected:
-                    raise ValueError(
-                        "Downloaded update hash mismatch.\n"
-                        f"Expected: {expected}\n"
-                        f"Received: {got}"
-                    )
-
             target_path = os.path.abspath(__file__)
             target_dir = os.path.dirname(target_path)
-            tmp_path = target_path + ".update.tmp"
-            backup_path = target_path + f".bak-{int(time.time())}"
+            stamp = int(time.time())
 
-            with open(tmp_path, "wb") as f:
-                f.write(payload)
+            # Download and verify everything first.
+            payloads: dict[str, bytes] = {}
+            for e in entries:
+                payload = _download_bytes(e["url"])
+                expected_sha256 = str(e.get("sha256", "") or "").strip()
+                if expected_sha256:
+                    got = _sha256_hex(payload).lower()
+                    expected = expected_sha256.lower()
+                    if got != expected:
+                        raise ValueError(
+                            "Downloaded update hash mismatch.\n"
+                            f"File: {e['path']}\n"
+                            f"Expected: {expected}\n"
+                            f"Received: {got}"
+                        )
+                payloads[e["path"]] = payload
+
+            replaced: list[tuple[str, str, Optional[int]]] = []  # (target, backup, old_mode)
+            created: list[str] = []
 
             try:
-                os.replace(target_path, backup_path)
-                try:
-                    os.replace(tmp_path, target_path)
-                except Exception:
-                    # Roll back immediately if placing the new file fails.
+                for e in entries:
+                    rel = e["path"]
+                    target = os.path.join(target_dir, rel)
+                    old_mode: Optional[int] = None
+                    backup = target + f".bak-{stamp}"
+                    tmp = target + ".update.tmp"
+
+                    if os.path.exists(target):
+                        try:
+                            old_mode = stat.S_IMODE(os.stat(target).st_mode)
+                        except OSError:
+                            old_mode = None
+                        os.replace(target, backup)
+                        replaced.append((target, backup, old_mode))
+                    else:
+                        created.append(target)
+
+                    with open(tmp, "wb") as f:
+                        f.write(payloads[rel])
+                    os.replace(tmp, target)
+
+                    # Keep shell installer executable on macOS after replacement.
+                    if target.endswith(".command"):
+                        mode = old_mode if old_mode is not None else 0o755
+                        try:
+                            os.chmod(target, mode | 0o111)
+                        except OSError:
+                            pass
+            except Exception:
+                # Roll back changed files.
+                for target, backup, _old_mode in reversed(replaced):
                     try:
-                        os.replace(backup_path, target_path)
+                        os.replace(backup, target)
                     except OSError:
                         pass
-                    raise
-            finally:
-                if os.path.exists(tmp_path):
+                for target in created:
                     try:
-                        os.remove(tmp_path)
+                        if os.path.exists(target):
+                            os.remove(target)
                     except OSError:
                         pass
+                raise
 
             def done() -> None:
-                if messagebox.askyesno(
-                    APP_TITLE,
-                    f"Update installed successfully.\n\n"
-                    f"Updated to: {remote_version}\n"
-                    f"Current file backup: {os.path.basename(backup_path)}\n\n"
-                    "Restart now to use the new version?",
-                ):
-                    self._restart_after_update(target_path, target_dir)
+                names = ", ".join(e["path"] for e in entries)
+                needs_restart = any(e["path"] == "dental_messenger.py" for e in entries)
+                if needs_restart:
+                    if messagebox.askyesno(
+                        APP_TITLE,
+                        f"Update installed successfully.\n\n"
+                        f"Updated to: {remote_version}\n"
+                        f"Files: {names}\n\n"
+                        "Restart now to use the new version?",
+                    ):
+                        self._restart_after_update(target_path, target_dir)
+                else:
+                    messagebox.showinfo(
+                        APP_TITLE,
+                        f"Update installed successfully.\n\nUpdated to: {remote_version}\nFiles: {names}",
+                    )
             ui(done)
         except urllib.error.URLError as exc:
             msg = str(exc)

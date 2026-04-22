@@ -182,6 +182,39 @@ install_python_org() {
   return 0
 }
 
+stop_running_chairside() {
+  echo "Checking for running Chairside Messenger..."
+  local pids
+  pids="$(pgrep -f "dental_messenger.py" || true)"
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+
+  echo "Closing running Chairside Messenger before install..."
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+  done <<< "$pids"
+
+  local deadline=$((SECONDS + 12))
+  while [[ $SECONDS -lt $deadline ]]; do
+    if ! pgrep -f "dental_messenger.py" >/dev/null 2>&1; then
+      echo "Chairside Messenger closed."
+      return 0
+    fi
+    sleep 0.3
+  done
+
+  echo "Warning: app still running after 12s; forcing close..."
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill -KILL "$pid" >/dev/null 2>&1 || true
+  done <<< "$(pgrep -f "dental_messenger.py" || true)"
+  sleep 0.5
+}
+
+stop_running_chairside
+
 find_working_python || true
 
 # Install python.org into /Library/Frameworks when it is missing, even if Homebrew Python
@@ -249,9 +282,9 @@ case "$py_report" in
     echo "Warning: Expected ${PY_MM}.x from python.org — if the app fails, install Python ${PY_FULL} or run this installer again."
     ;;
 esac
-echo "Installing / verifying tray dependencies (pystray, pillow, cairosvg) ..."
-if ! "$PYTHON3" -m pip install --disable-pip-version-check --user --upgrade pystray pillow cairosvg >/dev/null 2>&1; then
-  echo "Warning: could not install pystray/pillow/cairosvg; app may still run with reduced features."
+echo "Installing / verifying app dependencies (pystray, pillow, cairosvg, certifi) ..."
+if ! "$PYTHON3" -m pip install --disable-pip-version-check --user --upgrade pystray pillow cairosvg certifi >/dev/null 2>&1; then
+  echo "Warning: could not install pystray/pillow/cairosvg/certifi; app may still run with reduced features."
 fi
 
 if "$PYTHON3" -c "from AppKit import NSApplication" >/dev/null 2>&1; then
@@ -275,9 +308,17 @@ for logo in logo.svg Logo.svg logo.png Logo.png; do
     cp -f "$SCRIPT_DIR/$logo" "$INSTALL_DIR/$logo"
   fi
 done
-if [[ -f "$SCRIPT_DIR/version.json.example" ]]; then
-  cp -f "$SCRIPT_DIR/version.json.example" "$INSTALL_DIR/version.json.example"
-fi
+for support in \
+  "Install Dental Messenger macOS.command" \
+  "Install Dental Messenger.bat" \
+  "install_dental_messenger.ps1" \
+  "README-Windows-One-Click.txt" \
+  "version.json" \
+  "version.json.example"; do
+  if [[ -f "$SCRIPT_DIR/$support" ]]; then
+    cp -f "$SCRIPT_DIR/$support" "$INSTALL_DIR/$support"
+  fi
+done
 printf '%s\n' "$PYTHON3" > "$INSTALL_DIR/python_interpreter_path.txt"
 printf '%s\n' "$PY_FULL" > "$INSTALL_DIR/python_expected_version.txt"
 printf '%s\n' "$py_report" > "$INSTALL_DIR/python_installed_version.txt"

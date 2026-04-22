@@ -1,6 +1,35 @@
 {
   "version": "1.0.2",
-  "release_page_url": "https://github.com/AyoDoood/Chairside-Messenger/releases",
-  "download_url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/dental_messenger.py",
-  "release_notes": "Initial hosted update manifest."
+  "release_page_url": "https://github.com/AyoDoood/Chairside-Messenger/releases/tag/v1.0.2",
+  "release_notes": "Automatic multi-file updater: app + installer/support files can now update together.",
+  "files": {
+    "dental_messenger.py": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/dental_messenger.py",
+      "sha256": ""
+    },
+    "install_dental_messenger.ps1": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/install_dental_messenger.ps1",
+      "sha256": ""
+    },
+    "Install Dental Messenger.bat": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/Install%20Dental%20Messenger.bat",
+      "sha256": ""
+    },
+    "Install Dental Messenger macOS.command": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/Install%20Dental%20Messenger%20macOS.command",
+      "sha256": ""
+    },
+    "README-Windows-One-Click.txt": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/README-Windows-One-Click.txt",
+      "sha256": ""
+    },
+    "version.json": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/version.json",
+      "sha256": ""
+    },
+    "version.json.example": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/version.json.example",
+      "sha256": ""
+    }
+  }
 }

@@ -158,15 +158,61 @@ function Install-TrayDependencies {
     if (-not (Test-Path $pythonExe)) {
         return
     }
-    Write-Info "Installing tray dependencies (pystray, pillow, cairosvg)..."
+    Write-Info "Installing app dependencies (pystray, pillow, cairosvg, certifi)..."
     try {
-        & $pythonExe -m pip install --disable-pip-version-check --user --upgrade pystray pillow cairosvg
+        & $pythonExe -m pip install --disable-pip-version-check --user --upgrade pystray pillow cairosvg certifi
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[Chairside Messenger] Warning: could not install tray dependencies; app will still run." -ForegroundColor Yellow
         }
     } catch {
         Write-Host "[Chairside Messenger] Warning: tray dependency install failed; app will still run." -ForegroundColor Yellow
     }
+}
+
+function Stop-RunningChairsideMessenger {
+    param([int]$GraceSeconds = 12)
+    Write-Info "Checking for running Chairside Messenger..."
+    $targets = @()
+    try {
+        $targets = Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.CommandLine -and $_.CommandLine -match "dental_messenger\.py" -and $_.ProcessId -ne $PID
+        }
+    } catch {
+        # If process enumeration fails, continue install flow.
+        return
+    }
+    if (-not $targets -or $targets.Count -eq 0) {
+        return
+    }
+    Write-Info "Closing running Chairside Messenger before install..."
+    foreach ($proc in $targets) {
+        try {
+            Stop-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
+    $deadline = (Get-Date).AddSeconds($GraceSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $alive = @()
+        foreach ($proc in $targets) {
+            if (Get-Process -Id $proc.ProcessId -ErrorAction SilentlyContinue) {
+                $alive += $proc
+            }
+        }
+        if ($alive.Count -eq 0) {
+            Write-Info "Chairside Messenger closed."
+            return
+        }
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Host "[Chairside Messenger] Warning: app is still running after ${GraceSeconds}s; forcing close..." -ForegroundColor Yellow
+    foreach ($proc in $targets) {
+        try {
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        } catch {}
+    }
+    Start-Sleep -Milliseconds 500
 }
 
 function Build-BrandingIconWithDotNet {
@@ -406,6 +452,8 @@ Searched:
 "@
     }
 
+    Stop-RunningChairsideMessenger
+
     $pythonwPath = Get-PythonwPath
     if (-not $pythonwPath) {
         if (-not $pythonInstaller) {
@@ -439,12 +487,22 @@ Searched:
             }
         }
     }
-    $versionExample = Join-Path $packageDir "version.json.example"
-    if (Test-Path -LiteralPath $versionExample) {
+    foreach ($supportFile in @(
+        "install_dental_messenger.ps1",
+        "Install Dental Messenger.bat",
+        "Install Dental Messenger macOS.command",
+        "README-Windows-One-Click.txt",
+        "version.json",
+        "version.json.example"
+    )) {
+        $srcSupport = Join-Path $packageDir $supportFile
+        if (-not (Test-Path -LiteralPath $srcSupport)) {
+            continue
+        }
         try {
-            Copy-Item -Path $versionExample -Destination (Join-Path $installDir "version.json.example") -Force
+            Copy-Item -Path $srcSupport -Destination (Join-Path $installDir $supportFile) -Force
         } catch {
-            Write-Host "[Chairside Messenger] Warning: could not copy version.json.example to $installDir." -ForegroundColor Yellow
+            Write-Host "[Chairside Messenger] Warning: could not copy $supportFile to $installDir." -ForegroundColor Yellow
         }
     }
     $iconPath = Build-BrandingIcons -PythonwPath $pythonwPath -InstallerRoot $packageDir -InstallDir $installDir

@@ -20,6 +20,17 @@ Where settings are saved (station name, alert sound, volume, theme, etc.):
   This is the same folder the installer uses for dental_messenger.py, so settings persist when you re-run the installer to update the app.
 - macOS: ~/Library/Application Support/DentalMessenger/dental_messenger_config.json
 
+Automatic update setup (optional):
+- In each machine's config file, add:
+  "update_manifest_url": "https://your-hosted-url/version.json"
+- Or set environment variable CHAIRSIDE_UPDATE_MANIFEST_URL to that URL.
+- In the app, use Settings > Check for updates...
+- Manifest format: see version.json.example in this folder.
+- For automatic install, manifest can include either:
+  - top-level download_url (+ optional sha256) for dental_messenger.py only, or
+  - files.{filename}.url (+ optional sha256) to update multiple files.
+- If download_url is missing, the app can still open release_page_url.
+
 Windows install files:
 - Install Dental Messenger.bat
 - install_dental_messenger.ps1
@@ -30,8 +41,9 @@ Windows install files:
 Windows install steps:
 1) Put all Windows install files in one folder (the .bat, install_dental_messenger.ps1, and dental_messenger.py must stay together — do not copy only the .bat to the Desktop).
 2) Double-click: Install Dental Messenger.bat
-3) Wait for setup to complete.
-4) Open Desktop shortcut: Chairside Messenger
+3) Installer automatically closes any running Chairside Messenger instance (including tray) before updating.
+4) Wait for setup to complete.
+5) Open Desktop shortcut: Chairside Messenger
 
 macOS install files:
 - Install Dental Messenger macOS.command
@@ -45,4 +57,5 @@ macOS install steps:
 3) If macOS says you do not have permission, open Terminal and run: chmod +x "/path/to/Install Dental Messenger macOS.command" then run it again.
 4) If macOS blocks it, open System Settings > Privacy & Security and allow it.
 5) If no suitable Python with Tkinter is found, the installer downloads the official python.org macOS package (includes Tcl/Tk) or uses the optional .pkg next to it, then installs it — you will be asked for an administrator password once.
-6) Launch from Desktop: Chairside Messenger.app (double-click the icon).
+6) Installer automatically closes any running Chairside Messenger instance (including menu-bar/tray) before updating.
+7) Launch from Desktop: Chairside Messenger.app (double-click the icon).
