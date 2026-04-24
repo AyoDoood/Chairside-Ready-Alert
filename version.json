@@ -1,34 +1,38 @@
 {
   "version": "1.0.4",
-  "release_page_url": "https://github.com/AyoDoood/Chairside-Messenger/releases/tag/v1.0.2",
+  "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases/tag/v1.0.2",
   "release_notes": "Automatic multi-file updater: app + installer/support files can now update together.",
   "files": {
-    "dental_messenger.py": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/dental_messenger.py",
+    "chairside_ready_alert.py": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/chairside_ready_alert.py",
       "sha256": ""
     },
-    "install_dental_messenger.ps1": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/install_dental_messenger.ps1",
+    "install_chairside_ready_alert.ps1": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/install_chairside_ready_alert.ps1",
       "sha256": ""
     },
-    "Install Dental Messenger.bat": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/Install%20Dental%20Messenger.bat",
+    "Install Chairside Ready Alert.bat": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/Install%20Chairside%20Ready%20Alert.bat",
       "sha256": ""
     },
-    "Install Dental Messenger macOS.command": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/Install%20Dental%20Messenger%20macOS.command",
+    "Install Chairside Ready Alert macOS.command": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/Install%20Chairside%20Ready%20Alert%20macOS.command",
+      "sha256": ""
+    },
+    "install_chairside_ready_alert_macos.sh": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/install_chairside_ready_alert_macos.sh",
       "sha256": ""
     },
     "README-Windows-One-Click.txt": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/README-Windows-One-Click.txt",
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/README-Windows-One-Click.txt",
       "sha256": ""
     },
     "version.json": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/version.json",
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/version.json",
       "sha256": ""
     },
     "version.json.example": {
-      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Messenger/main/version.json.example",
+      "url": "https://raw.githubusercontent.com/AyoDoood/Chairside-Ready-Alert/main/version.json.example",
       "sha256": ""
     }
   }

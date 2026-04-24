@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chairside Ready Alert — Layout Preview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #111827;
+  min-height: 100vh;
+  padding: 32px 24px;
+  color: #fff;
+}
+h1 { text-align: center; font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+.subtitle { text-align: center; color: #9ca3af; margin-bottom: 32px; font-size: 15px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  max-width: 1440px;
+  margin: 0 auto 28px;
+}
+
+.card-wrap {
+  cursor: pointer;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 3px solid transparent;
+  transition: all 0.18s ease;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+}
+.card-wrap:hover { transform: translateY(-4px); box-shadow: 0 10px 36px rgba(0,0,0,0.5); }
+.card-wrap.selected { border-color: #60a5fa; box-shadow: 0 0 0 5px rgba(96,165,250,0.25), 0 10px 36px rgba(0,0,0,0.5); }
+
+.card-label {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  background: rgba(0,0,0,0.45);
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+.card-num {
+  display: inline-block;
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  font-size: 10px;
+}
+
+/* ── app mockup ── */
+.app-preview { padding: 10px; font-size: 11px; line-height: 1.3; }
+.app-title-text { font-size: 13px; font-weight: 800; margin-bottom: 8px; }
+
+.top-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.p-card { border-radius: 7px; padding: 8px; }
+.station-card { flex: 0 0 44%; }
+.rmsg-card { flex: 1; }
+
+.p-card-title { font-size: 10px; font-weight: 700; margin-bottom: 6px; }
+.field-lbl { font-size: 8px; margin-bottom: 2px; opacity: 0.75; }
+
+.fake-input {
+  height: 17px; border-radius: 3px; border: 1px solid;
+  padding: 0 5px; font-size: 8.5px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px; width: 100%;
+}
+.sound-row { display: flex; gap: 3px; margin-bottom: 4px; align-items: center; }
+.sound-row .fake-input { flex: 1; margin-bottom: 0; }
+.play-b {
+  width: 20px; height: 17px; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; flex-shrink: 0; border: none;
+}
+
+.slider-track { height: 3px; border-radius: 2px; margin: 5px 0 3px; position: relative; }
+.slider-fill { height: 100%; width: 65%; border-radius: 2px; }
+.slider-thumb { width: 8px; height: 8px; border-radius: 50%; position: absolute; top: -2.5px; left: 62%; border: 1.5px solid; }
+
+.status-line { font-size: 8.5px; font-weight: 700; margin-bottom: 4px; }
+.log-box { border-radius: 4px; padding: 4px 5px; height: 46px; overflow: hidden; }
+.log-entry { font-size: 7.5px; line-height: 1.75; opacity: 0.7; }
+
+.ready-wrap { display: flex; justify-content: center; padding: 8px 0 7px; }
+.ready-b {
+  padding: 9px 0; width: 80%; border-radius: 7px;
+  font-size: 15px; font-weight: 800; border: none;
+  cursor: default; letter-spacing: 0.03em; text-align: center;
+}
+
+.send-card { border-radius: 7px; padding: 8px; }
+.send-title { font-size: 10px; font-weight: 700; margin-bottom: 6px; }
+.checks { display: flex; flex-wrap: wrap; gap: 5px 10px; }
+.chk { display: flex; align-items: center; gap: 3px; font-size: 8.5px; }
+.chk-box {
+  width: 10px; height: 10px; border-radius: 2px; border: 1.5px solid;
+  display: flex; align-items: center; justify-content: center; font-size: 6.5px; flex-shrink: 0;
+}
+
+/* ── bottom bar ── */
+.bottom-bar {
+  max-width: 1440px; margin: 0 auto;
+  background: rgba(255,255,255,0.07);
+  border-radius: 16px; padding: 18px 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; min-height: 64px;
+}
+.bottom-bar strong { color: #60a5fa; }
+</style>
+</head>
+<body>
+
+<h1>Chairside Ready Alert — Layout Preview</h1>
+<p class="subtitle">Click any layout to select it, then tell me the number to apply it.</p>
+<div class="grid" id="grid"></div>
+<div class="bottom-bar" id="sel-bar">Click a layout above to select it</div>
+
+<script>
+const themes = [
+  {
+    name:"Modern Blue", bg:"#f0f4ff", cardBg:"#ffffff", accent:"#2563eb", accentText:"#ffffff",
+    titleColor:"#1e40af", text:"#1e293b", sub:"#64748b", border:"#dde6f5",
+    logBg:"#f8faff", logText:"#475569", status:"#16a34a",
+    sliderTrack:"#dde6f5", thumbBorder:"#2563eb", checkBorder:"#94a3b8",
+    checkFill:"#2563eb", inputBorder:"#cbd5e1", inputBg:"#f8fafc"
+  },
+  {
+    name:"Dark Obsidian", bg:"#0f0f1a", cardBg:"#1a1a2e", accent:"#6366f1", accentText:"#ffffff",
+    titleColor:"#818cf8", text:"#e2e8f0", sub:"#94a3b8", border:"#2d2d4a",
+    logBg:"#12121f", logText:"#94a3b8", status:"#34d399",
+    sliderTrack:"#2d2d4a", thumbBorder:"#6366f1", checkBorder:"#4a4a6a",
+    checkFill:"#6366f1", inputBorder:"#2d2d4a", inputBg:"#12121f"
+  },
+  {
+    name:"Sage Clinic", bg:"#f2f5ee", cardBg:"#ffffff", accent:"#4a7c59", accentText:"#ffffff",
+    titleColor:"#2d5a3d", text:"#2c3e2d", sub:"#6b8f6c", border:"#d4e4d5",
+    logBg:"#f7faf7", logText:"#5a7a5b", status:"#2d8a4e",
+    sliderTrack:"#c8dfc9", thumbBorder:"#4a7c59", checkBorder:"#9dbf9e",
+    checkFill:"#4a7c59", inputBorder:"#c8dfc9", inputBg:"#f7faf7"
+  },
+  {
+    name:"Midnight Navy", bg:"#0f172a", cardBg:"#1e293b", accent:"#38bdf8", accentText:"#0f172a",
+    titleColor:"#7dd3fc", text:"#e2e8f0", sub:"#94a3b8", border:"#334155",
+    logBg:"#0f172a", logText:"#94a3b8", status:"#4ade80",
+    sliderTrack:"#334155", thumbBorder:"#38bdf8", checkBorder:"#475569",
+    checkFill:"#38bdf8", inputBorder:"#334155", inputBg:"#0f172a"
+  },
+  {
+    name:"Warm Coral", bg:"#fff5f0", cardBg:"#ffffff", accent:"#e84545", accentText:"#ffffff",
+    titleColor:"#c0392b", text:"#2d1515", sub:"#9b6b6b", border:"#fad5d0",
+    logBg:"#fff9f8", logText:"#9b6b6b", status:"#27ae60",
+    sliderTrack:"#fad5d0", thumbBorder:"#e84545", checkBorder:"#f0a090",
+    checkFill:"#e84545", inputBorder:"#fad5d0", inputBg:"#fff9f8"
+  },
+  {
+    name:"Forest Night", bg:"#141f14", cardBg:"#1c2b1c", accent:"#4ade80", accentText:"#0f1f0f",
+    titleColor:"#86efac", text:"#d4e8d4", sub:"#86b886", border:"#2a3f2a",
+    logBg:"#0f1a0f", logText:"#86b886", status:"#4ade80",
+    sliderTrack:"#2a3f2a", thumbBorder:"#4ade80", checkBorder:"#3a5a3a",
+    checkFill:"#4ade80", inputBorder:"#2a3f2a", inputBg:"#0f1a0f"
+  },
+  {
+    name:"Slate Pro", bg:"#dde3ee", cardBg:"#ffffff", accent:"#0ea5e9", accentText:"#ffffff",
+    titleColor:"#0369a1", text:"#1e3a5f", sub:"#5a7896", border:"#c8d4e4",
+    logBg:"#f0f5fa", logText:"#5a7896", status:"#16a34a",
+    sliderTrack:"#c8d4e4", thumbBorder:"#0ea5e9", checkBorder:"#a0bcd4",
+    checkFill:"#0ea5e9", inputBorder:"#c8d4e4", inputBg:"#f4f7fb"
+  },
+  {
+    name:"Lavender Soft", bg:"#f3f0ff", cardBg:"#ffffff", accent:"#7c3aed", accentText:"#ffffff",
+    titleColor:"#5b21b6", text:"#2e1065", sub:"#7c6b9c", border:"#ddd6fe",
+    logBg:"#faf8ff", logText:"#7c6b9c", status:"#059669",
+    sliderTrack:"#ddd6fe", thumbBorder:"#7c3aed", checkBorder:"#c4b5fd",
+    checkFill:"#7c3aed", inputBorder:"#ddd6fe", inputBg:"#faf8ff"
+  },
+  {
+    name:"Amber Noir", bg:"#1a1208", cardBg:"#261a08", accent:"#f59e0b", accentText:"#1a1208",
+    titleColor:"#fcd34d", text:"#fef3c7", sub:"#c4965a", border:"#3a280a",
+    logBg:"#130e04", logText:"#c4965a", status:"#34d399",
+    sliderTrack:"#3a280a", thumbBorder:"#f59e0b", checkBorder:"#5a3c10",
+    checkFill:"#f59e0b", inputBorder:"#3a280a", inputBg:"#130e04"
+  },
+  {
+    name:"Arctic White", bg:"#eaf4fc", cardBg:"#ffffff", accent:"#0284c7", accentText:"#ffffff",
+    titleColor:"#0369a1", text:"#0c2d4a", sub:"#5b90b4", border:"#bde0f5",
+    logBg:"#f5fbff", logText:"#5b90b4", status:"#16a34a",
+    sliderTrack:"#bde0f5", thumbBorder:"#0284c7", checkBorder:"#90c8e8",
+    checkFill:"#0284c7", inputBorder:"#bde0f5", inputBg:"#f5fbff"
+  },
+  {
+    name:"Rose Quartz", bg:"#fdf2f4", cardBg:"#ffffff", accent:"#e11d48", accentText:"#ffffff",
+    titleColor:"#be123c", text:"#3d0a18", sub:"#9c5a6c", border:"#fbc9d4",
+    logBg:"#fff5f7", logText:"#9c5a6c", status:"#059669",
+    sliderTrack:"#fbc9d4", thumbBorder:"#e11d48", checkBorder:"#f4a0b4",
+    checkFill:"#e11d48", inputBorder:"#fbc9d4", inputBg:"#fff5f7"
+  },
+  {
+    name:"Teal Modern", bg:"#effaf8", cardBg:"#ffffff", accent:"#0d9488", accentText:"#ffffff",
+    titleColor:"#0f766e", text:"#0f2c29", sub:"#5a9e96", border:"#b8e8e3",
+    logBg:"#f4fcfb", logText:"#5a9e96", status:"#0d9488",
+    sliderTrack:"#b8e8e3", thumbBorder:"#0d9488", checkBorder:"#80d0c8",
+    checkFill:"#0d9488", inputBorder:"#b8e8e3", inputBg:"#f4fcfb"
+  },
+  {
+    name:"Charcoal & Fire", bg:"#1a1a1a", cardBg:"#272727", accent:"#f97316", accentText:"#ffffff",
+    titleColor:"#fb923c", text:"#f0ece8", sub:"#a89080", border:"#383838",
+    logBg:"#111111", logText:"#a89080", status:"#4ade80",
+    sliderTrack:"#383838", thumbBorder:"#f97316", checkBorder:"#505050",
+    checkFill:"#f97316", inputBorder:"#383838", inputBg:"#111111"
+  },
+  {
+    name:"Olive & Cream", bg:"#f5f2e8", cardBg:"#fffef8", accent:"#556b2f", accentText:"#ffffff",
+    titleColor:"#3d4f22", text:"#2c2c18", sub:"#7a8060", border:"#d8d8b8",
+    logBg:"#fafaf0", logText:"#7a8060", status:"#3d8b3d",
+    sliderTrack:"#d0d0a8", thumbBorder:"#556b2f", checkBorder:"#a8b880",
+    checkFill:"#556b2f", inputBorder:"#d8d8b8", inputBg:"#fafaf0"
+  },
+  {
+    name:"Deep Ocean", bg:"#0a1628", cardBg:"#0f2040", accent:"#3b82f6", accentText:"#ffffff",
+    titleColor:"#93c5fd", text:"#dbeafe", sub:"#7ea8d4", border:"#1e3a5a",
+    logBg:"#071020", logText:"#7ea8d4", status:"#34d399",
+    sliderTrack:"#1e3a5a", thumbBorder:"#3b82f6", checkBorder:"#2a4a6a",
+    checkFill:"#3b82f6", inputBorder:"#1e3a5a", inputBg:"#071020"
+  },
+  {
+    name:"Plum & Gold", bg:"#1e0f30", cardBg:"#2d1a48", accent:"#eab308", accentText:"#1e0f30",
+    titleColor:"#fde68a", text:"#ede0ff", sub:"#b090d0", border:"#3d2660",
+    logBg:"#160a24", logText:"#b090d0", status:"#34d399",
+    sliderTrack:"#3d2660", thumbBorder:"#eab308", checkBorder:"#5a3a80",
+    checkFill:"#eab308", inputBorder:"#3d2660", inputBg:"#160a24"
+  },
+  {
+    name:"Emerald Fresh", bg:"#f0fdf4", cardBg:"#ffffff", accent:"#059669", accentText:"#ffffff",
+    titleColor:"#047857", text:"#052e16", sub:"#6b9e7a", border:"#bbf7d0",
+    logBg:"#f7fef9", logText:"#6b9e7a", status:"#059669",
+    sliderTrack:"#bbf7d0", thumbBorder:"#059669", checkBorder:"#86efac",
+    checkFill:"#059669", inputBorder:"#bbf7d0", inputBg:"#f7fef9"
+  },
+  {
+    name:"Terracotta", bg:"#fef3ec", cardBg:"#ffffff", accent:"#c2440f", accentText:"#ffffff",
+    titleColor:"#9a3412", text:"#3c1a0a", sub:"#9a6a50", border:"#f5c9a8",
+    logBg:"#fff8f3", logText:"#9a6a50", status:"#16a34a",
+    sliderTrack:"#f5c9a8", thumbBorder:"#c2440f", checkBorder:"#e8a878",
+    checkFill:"#c2440f", inputBorder:"#f5c9a8", inputBg:"#fff8f3"
+  },
+  {
+    name:"Steel Indigo", bg:"#eef0f8", cardBg:"#ffffff", accent:"#4f46e5", accentText:"#ffffff",
+    titleColor:"#3730a3", text:"#1e1b4b", sub:"#6b6d9a", border:"#d4d6f0",
+    logBg:"#f6f7ff", logText:"#6b6d9a", status:"#059669",
+    sliderTrack:"#d4d6f0", thumbBorder:"#4f46e5", checkBorder:"#a5b4fc",
+    checkFill:"#4f46e5", inputBorder:"#d4d6f0", inputBg:"#f6f7ff"
+  },
+  {
+    name:"Monochrome", bg:"#f0f0f0", cardBg:"#ffffff", accent:"#111111", accentText:"#ffffff",
+    titleColor:"#111111", text:"#111111", sub:"#666666", border:"#dddddd",
+    logBg:"#f8f8f8", logText:"#666666", status:"#333333",
+    sliderTrack:"#dddddd", thumbBorder:"#111111", checkBorder:"#bbbbbb",
+    checkFill:"#111111", inputBorder:"#dddddd", inputBg:"#f8f8f8"
+  },
+];
+
+function buildMockup(t) {
+  return `
+<div class="app-preview" style="background:${t.bg}">
+  <div class="app-title-text" style="color:${t.titleColor}">Chairside Ready Alert</div>
+  <div class="top-row">
+    <div class="p-card station-card" style="background:${t.cardBg};border:1px solid ${t.border}">
+      <div class="p-card-title" style="color:${t.text}">Station Setup</div>
+      <div class="field-lbl" style="color:${t.sub}">Station name</div>
+      <div class="fake-input" style="background:${t.inputBg};border-color:${t.inputBorder};color:${t.text}">Room 1 <span style="opacity:.5">▾</span></div>
+      <div class="field-lbl" style="color:${t.sub}">Alert Sound</div>
+      <div class="sound-row">
+        <div class="fake-input" style="background:${t.inputBg};border-color:${t.inputBorder};color:${t.text}">Bright Chime <span style="opacity:.5">▾</span></div>
+        <div class="play-b" style="background:${t.accent};color:${t.accentText}">▶</div>
+      </div>
+      <div class="field-lbl" style="color:${t.sub}">Alert Volume</div>
+      <div class="slider-track" style="background:${t.sliderTrack}">
+        <div class="slider-fill" style="background:${t.accent}"></div>
+        <div class="slider-thumb" style="background:${t.cardBg};border-color:${t.thumbBorder}"></div>
+      </div>
+    </div>
+    <div class="p-card rmsg-card" style="background:${t.cardBg};border:1px solid ${t.border}">
+      <div class="status-line" style="color:${t.status}">Online: Doctor, Room 2</div>
+      <div class="p-card-title" style="color:${t.text}">Ready Messages</div>
+      <div class="log-box" style="background:${t.logBg}">
+        <div class="log-entry" style="color:${t.logText}">[09:14 AM] Doctor: Ready</div>
+        <div class="log-entry" style="color:${t.logText}">[09:22 AM] Room 2: Ready</div>
+        <div class="log-entry" style="color:${t.logText}">[09:35 AM] Ready → Doctor</div>
+      </div>
+    </div>
+  </div>
+  <div class="ready-wrap">
+    <div class="ready-b" style="background:${t.accent};color:${t.accentText}">Ready</div>
+  </div>
+  <div class="send-card" style="background:${t.cardBg};border:1px solid ${t.border}">
+    <div class="send-title" style="color:${t.text}">Send Message</div>
+    <div class="checks">
+      <div class="chk" style="color:${t.text}"><div class="chk-box" style="border-color:${t.checkFill};background:${t.checkFill};color:${t.accentText}">✓</div>Doctor</div>
+      <div class="chk" style="color:${t.text}"><div class="chk-box" style="border-color:${t.checkFill};background:${t.checkFill};color:${t.accentText}">✓</div>Room 2</div>
+      <div class="chk" style="color:${t.text}"><div class="chk-box" style="border-color:${t.checkBorder}"></div>Room 3</div>
+      <div class="chk" style="color:${t.text}"><div class="chk-box" style="border-color:${t.checkBorder}"></div>Lab</div>
+    </div>
+  </div>
+</div>`;
+}
+
+const grid = document.getElementById('grid');
+const bar  = document.getElementById('sel-bar');
+
+themes.forEach((t, i) => {
+  const wrap = document.createElement('div');
+  wrap.className = 'card-wrap';
+  wrap.innerHTML = `<div class="card-label"><span class="card-num">${i+1}</span>${t.name}</div>${buildMockup(t)}`;
+  wrap.addEventListener('click', () => {
+    document.querySelectorAll('.card-wrap').forEach(c => c.classList.remove('selected'));
+    wrap.classList.add('selected');
+    bar.innerHTML = `Selected: <strong>#${i+1} — ${t.name}</strong> &nbsp;·&nbsp; Tell me this number and I'll apply it!`;
+  });
+  grid.appendChild(wrap);
+});
+</script>
+</body>
+</html>
