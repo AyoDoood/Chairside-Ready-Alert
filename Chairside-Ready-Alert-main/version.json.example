@@ -14,11 +14,11 @@
       "sha256": "OPTIONAL_SHA256_OF_DOWNLOADED_PS1_FILE"
     },
     "Install Chairside Ready Alert.bat": {
-      "url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases/download/v1.0.0/Install%20Dental%20Messenger.bat",
+      "url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases/download/v1.0.0/Install%20Chairside%20Ready%20Alert.bat",
       "sha256": "OPTIONAL_SHA256_OF_DOWNLOADED_BAT_FILE"
     },
     "Install Chairside Ready Alert macOS.command": {
-      "url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases/download/v1.0.0/Install%20Dental%20Messenger%20macOS.command",
+      "url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases/download/v1.0.0/Install%20Chairside%20Ready%20Alert%20macOS.command",
       "sha256": "OPTIONAL_SHA256_OF_DOWNLOADED_MAC_COMMAND_FILE"
     },
     "install_chairside_ready_alert_macos.sh": {
