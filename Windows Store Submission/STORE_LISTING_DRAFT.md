@@ -96,9 +96,24 @@ alert
 
 ## Store listing → Copyright and trademark info
 
+Recommended (covers copyright + claims common-law trademark on the name and logo, no registrations needed):
+
+```
+© 2026 Fieldcrest Dental PC. All rights reserved. "Chairside Ready Alert" and the Chairside Ready Alert logo are trademarks of Fieldcrest Dental PC.
+```
+
+Shorter alternative if Partner Center's field is strict:
+
 ```
 © 2026 Fieldcrest Dental PC. All rights reserved.
 ```
+
+> **Why this is OK without filing anything:** Copyright is automatic
+> the moment code is written — the © notice declares an existing right.
+> Common-law trademark accrues automatically through use in commerce —
+> "is a trademark of" or the ™ symbol can be used freely without
+> registration. **Do not** use ® unless USPTO has actually registered
+> the mark; using ® without registration is a federal violation.
 
 ---
 
