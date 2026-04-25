@@ -8,6 +8,7 @@ A LAN-based alert and messaging tool for dental practices.
 
 ## Documents
 
+- [FAQ & Troubleshooting](./FAQ.html)
 - [Privacy Policy](./PRIVACY_POLICY.html)
 - [Ownership and License](./OWNERSHIP_AND_LICENSE.html)
 - [Third-Party Notices](./THIRD_PARTY_NOTICES.html)
