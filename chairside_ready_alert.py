@@ -113,7 +113,12 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
+# True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
+# directory is read-only and Store policy prohibits self-update, so the auto-
+# update UI and any "spawn python on the .py file" code paths must be gated
+# off when this is True.
+IS_FROZEN = getattr(sys, "frozen", False)
 # Optional default manifest URL baked into your build; usually leave empty and set
 # update_manifest_url in chairside_ready_alert_config.json or CHAIRSIDE_UPDATE_MANIFEST_URL.
 UPDATE_MANIFEST_URL_BUILTIN = "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/version.json"
@@ -1340,15 +1345,21 @@ class ChairsideReadyAlertApp:
                 icon.visible = True
             except Exception:
                 pass
-        menu = pystray.Menu(
+        # Microsoft Store policy 10.8.1 prohibits in-app self-update — hide the
+        # menu entry on frozen Store builds. Updates ship via the Store channel.
+        items = [
             pystray.MenuItem("Send Ready", self._tray_send_ready),
             # Default menu action maps to tray icon double-click on platforms that support it.
             pystray.MenuItem("Show Main Window", self._tray_show_main, default=True),
             pystray.MenuItem("Hide Main Window", self._tray_hide_main),
-            pystray.MenuItem("Check for Updates", self._tray_check_updates),
+        ]
+        if not IS_FROZEN:
+            items.append(pystray.MenuItem("Check for Updates", self._tray_check_updates))
+        items.extend([
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Close Chairside Ready Alert", self._tray_quit),
-        )
+        ])
+        menu = pystray.Menu(*items)
         self._tray_icon = pystray.Icon(
             "chairside_ready",
             self._create_tray_icon_image(),
@@ -1508,9 +1519,10 @@ class ChairsideReadyAlertApp:
             item_hide.setTarget_(target)
             menu.addItem_(item_hide)
 
-            item_updates = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Check for Updates", "checkUpdates:", "")
-            item_updates.setTarget_(target)
-            menu.addItem_(item_updates)
+            if not IS_FROZEN:
+                item_updates = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Check for Updates", "checkUpdates:", "")
+                item_updates.setTarget_(target)
+                menu.addItem_(item_updates)
 
             menu.addItem_(NSMenuItem.separatorItem())
 
@@ -1864,7 +1876,8 @@ class ChairsideReadyAlertApp:
         settings_menu.add_separator()
         settings_menu.add_command(label="Network Settings...", command=self._open_network_settings_window)
         settings_menu.add_command(label="Connection log...", command=self._open_connection_log_window)
-        settings_menu.add_command(label="Check for updates...", command=self._check_for_updates_clicked)
+        if not IS_FROZEN:
+            settings_menu.add_command(label="Check for updates...", command=self._check_for_updates_clicked)
         settings_menu.add_command(label="Windows Tray Icon Setup...", command=self._show_windows_tray_help)
         settings_menu.add_command(label="Tray diagnostics...", command=self._open_tray_diagnostics_window)
         settings_menu.add_separator()
@@ -1925,18 +1938,23 @@ class ChairsideReadyAlertApp:
                 startup_dir = os.path.dirname(bat_path)
                 if enabled:
                     os.makedirs(startup_dir, exist_ok=True)
-                    script_path = os.path.join(_support_dir(), "chairside_ready_alert.py")
-                    py = sys.executable
-                    pyw = py
-                    if os.path.basename(py).lower() == "python.exe":
-                        candidate = os.path.join(os.path.dirname(py), "pythonw.exe")
-                        if os.path.isfile(candidate):
-                            pyw = candidate
-                    content = (
-                        "@echo off\n"
-                        f'cd /d "{_support_dir()}"\n'
-                        f'"{pyw}" "{script_path}"\n'
-                    )
+                    if IS_FROZEN:
+                        # In a Store/PyInstaller build there is no .py to launch — exec the EXE directly.
+                        exe = sys.executable
+                        content = "@echo off\n" + f'start "" "{exe}"\n'
+                    else:
+                        script_path = os.path.join(_support_dir(), "chairside_ready_alert.py")
+                        py = sys.executable
+                        pyw = py
+                        if os.path.basename(py).lower() == "python.exe":
+                            candidate = os.path.join(os.path.dirname(py), "pythonw.exe")
+                            if os.path.isfile(candidate):
+                                pyw = candidate
+                        content = (
+                            "@echo off\n"
+                            f'cd /d "{_support_dir()}"\n'
+                            f'"{pyw}" "{script_path}"\n'
+                        )
                     with open(bat_path, "w", encoding="ascii", errors="ignore") as f:
                         f.write(content)
                 else:
@@ -2034,7 +2052,8 @@ class ChairsideReadyAlertApp:
         ttk.Button(btn_row, text="Show Main", command=self._show_main_window).pack(side="left", padx=(6, 0))
         ttk.Button(btn_row, text="Hide Main", command=self._hide_main_window).pack(side="left", padx=(6, 0))
         ttk.Button(btn_row, text="Send Ready", command=self._send_ready_from_widget).pack(side="left", padx=(6, 0))
-        ttk.Button(btn_row, text="Check Updates", command=self._check_for_updates_clicked).pack(side="left", padx=(6, 0))
+        if not IS_FROZEN:
+            ttk.Button(btn_row, text="Check Updates", command=self._check_for_updates_clicked).pack(side="left", padx=(6, 0))
 
         text = tk.Text(frame, height=14, wrap="word", font=_ui_font(9))
         scroll = ttk.Scrollbar(frame, command=text.yview)
@@ -2084,6 +2103,10 @@ class ChairsideReadyAlertApp:
         return self._manifest_url_candidates(str(UPDATE_MANIFEST_URL_BUILTIN or "").strip())
 
     def _check_for_updates_clicked(self) -> None:
+        # Frozen Store builds receive updates through the Store; the in-app
+        # download/install path would write to the read-only install dir.
+        if IS_FROZEN:
+            return
         threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
 
     def _check_for_updates_worker(self) -> None:
@@ -3332,10 +3355,19 @@ class ChairsideReadyAlertApp:
         self.root.destroy()
 
 
+def _startup_log_path() -> str:
+    # Always write logs to the user data dir (writable on Store and dev installs).
+    d = _user_data_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, "startup_log.txt")
+
+
 def _append_startup_log(line: str) -> None:
     try:
-        p = os.path.join(_support_dir(), "startup_log.txt")
-        with open(p, "a", encoding="utf-8") as f:
+        with open(_startup_log_path(), "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {line}\n")
     except Exception:
         pass
@@ -3404,8 +3436,7 @@ if __name__ == "__main__":
         try:
             import traceback
 
-            p = os.path.join(_support_dir(), "startup_log.txt")
-            with open(p, "a", encoding="utf-8") as f:
+            with open(_startup_log_path(), "a", encoding="utf-8") as f:
                 f.write(traceback.format_exc())
                 f.write("\n")
         except Exception:

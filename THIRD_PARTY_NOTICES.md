@@ -20,6 +20,13 @@ This project includes or depends on third-party software. License obligations sh
 
 - `PyInstaller` (GPL-2.0-or-later with bootloader exception)
 
+## Full license texts
+
+Full license texts, copyright notices, and source-availability statements
+for each component above are reproduced in `licenses/THIRD_PARTY_LICENSES.txt`.
+That file is bundled next to the EXE in Windows Store builds so users have
+direct access to the notices required by the LGPL-3.0 and MPL-2.0 licenses.
+
 ## Maintainer Notes
 
 1. Keep this file updated when adding/removing dependencies.

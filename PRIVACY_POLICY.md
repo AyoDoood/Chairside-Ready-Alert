@@ -1,7 +1,7 @@
 # Chairside Ready Alert Privacy Policy
 
 **Effective date:** April 24, 2026  
-**Last updated:** April 24, 2026
+**Last updated:** April 25, 2026
 
 This Privacy Policy explains how Chairside Ready Alert ("the App", "we", "our", "us") handles information when you use the app on Windows and macOS.
 
@@ -40,8 +40,9 @@ The App does not operate a cloud database for your app usage data.
 
 Chairside Ready Alert is intended for trusted local networks.
 
-- The App uses **UDP broadcast** for peer discovery (default UDP port 50506).
-- The App uses **TCP** for messaging between peers (default TCP port 50505).
+- The App uses **UDP broadcast** for peer discovery (default UDP port 50506). Approximately every 2.5 seconds, the App broadcasts a small JSON beacon containing the **station label you choose** (for example, "Doctor" or "Room 1") and the TCP port the App listens on. Every device on the same local subnet — not only other Chairside Ready Alert installations — can observe these beacons.
+- The App uses **TCP** for messaging between peers (default TCP port 50505). Message payloads include the **sender's station label**, the chosen alert sound name, and a timestamp.
+- The App's local IP address and the IP addresses of other Chairside Ready Alert peers are visible to every device on the same LAN as part of normal network discovery.
 - Message payloads and discovery beacons are designed for local network operation and are **not end-to-end encrypted by the App**.
 - Device and network administrators are responsible for network controls (segmentation, firewall rules, VLANs, VPNs, endpoint protection) appropriate for their environment.
 
@@ -51,13 +52,12 @@ If used on an untrusted, misconfigured, or publicly accessible network, other pa
 
 ## 5. Internet Access and Updates
 
-The App may access the internet only for update-related functions:
+How the App receives updates depends on how it was installed:
 
-- Checking a configured update manifest URL.
-- Downloading update files when you choose to install updates.
-- Optionally opening a release page in your browser.
+- **Microsoft Store version (Windows):** updates are delivered exclusively through the Microsoft Store. The App itself performs no update checks, no manifest fetches, and no internet downloads. The App makes no outbound internet connections in normal operation.
+- **Direct-installer version (Windows .ps1 / macOS .command):** the App may access the internet only when the user manually clicks "Check for updates…", to fetch a small JSON manifest from a configured URL, optionally download an update file, or open a release page in the browser. No automatic background update checks occur.
 
-Update endpoints are defined by the app configuration or built-in defaults. If your organization hosts its own update manifest, your organization controls that endpoint.
+The App does not include third-party analytics, advertising, telemetry, or crash reporting that contacts external servers.
 
 ## 6. Data Sharing and Disclosure
 

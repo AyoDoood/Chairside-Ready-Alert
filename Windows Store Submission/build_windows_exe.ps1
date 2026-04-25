@@ -15,6 +15,12 @@ $repoRootAppScript = Join-Path (Split-Path $scriptDir -Parent) "chairside_ready_
 $appScript = if (Test-Path $localAppScript) { $localAppScript } elseif (Test-Path $repoRootAppScript) { $repoRootAppScript } else { $null }
 if (-not $appScript) { throw "Could not find chairside_ready_alert.py in this folder or parent folder." }
 
+# licenses/ folder (third-party license texts). Ships next to the EXE so the
+# EXE bundle is self-contained for compliance.
+$repoRoot = Split-Path $scriptDir -Parent
+$licensesDir = Join-Path $repoRoot "licenses"
+if (-not (Test-Path $licensesDir)) { throw "licenses/ folder not found at: $licensesDir" }
+
 Write-Info "Using working directory: $scriptDir"
 Set-Location $scriptDir
 Write-Info "App script: $appScript"
@@ -44,6 +50,7 @@ Write-Info "Building Windows executable (onedir)..."
   --collect-submodules pystray `
   --collect-submodules PIL `
   --collect-data certifi `
+  --add-data "$licensesDir;licenses" `
   "$appScript"
 
 $exePath = Join-Path $scriptDir "dist\ChairsideReadyAlert\ChairsideReadyAlert.exe"

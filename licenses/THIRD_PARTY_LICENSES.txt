@@ -1,0 +1,150 @@
+CHAIRSIDE READY ALERT — THIRD-PARTY LICENSE NOTICES
+=====================================================
+
+This product bundles open-source software developed by third parties. The
+notices below identify each component, the license it is distributed under,
+and a canonical URL where the full license text can be obtained.
+
+Where a license requires distribution of source for modified versions
+(LGPL, MPL), Fieldcrest Dental PC will provide upon request, at the
+contact address listed in OWNERSHIP_AND_LICENSE.md.
+
+
+-----------------------------------------------------------------
+Python                                          (Python Software Foundation License Version 2)
+-----------------------------------------------------------------
+Copyright (c) 2001-2026 Python Software Foundation. All rights reserved.
+
+Full text:
+  https://docs.python.org/3/license.html
+
+The Python interpreter and standard library used to build this application
+are distributed under the PSF License Agreement, a permissive license
+compatible with commercial redistribution.
+
+
+-----------------------------------------------------------------
+Tcl / Tk                                        (Tcl/Tk License — BSD-style)
+-----------------------------------------------------------------
+Copyright (c) 1989-1994 The Regents of the University of California.
+Copyright (c) 1994 The Australian National University.
+Copyright (c) 1994-1998 Sun Microsystems, Inc.
+Copyright (c) 1998-2000 Ajuba Solutions.
+
+Full text:
+  https://www.tcl.tk/software/tcltk/license.html
+
+Tcl/Tk is distributed under a permissive BSD-style license. The Python
+"tkinter" module embeds Tcl/Tk for cross-platform GUI rendering.
+
+
+-----------------------------------------------------------------
+pystray                                         (GNU Lesser General Public License v3.0)
+-----------------------------------------------------------------
+Copyright (c) Moses Palmer and contributors.
+
+Full text:
+  https://www.gnu.org/licenses/lgpl-3.0.txt
+  https://www.gnu.org/licenses/gpl-3.0.txt   (referenced by LGPL-3.0)
+
+Source code for the unmodified version of pystray bundled with this
+release is available at:
+  https://pypi.org/project/pystray/
+
+If you wish to replace pystray with a modified version, the
+unmodified version can be obtained from the URL above and re-bundled
+using PyInstaller against the same Python interpreter.
+
+
+-----------------------------------------------------------------
+Pillow                                          (HPND license — permissive, BSD-like)
+-----------------------------------------------------------------
+The Python Imaging Library (PIL) is
+
+    Copyright (c) 1997-2011 by Secret Labs AB
+    Copyright (c) 1995-2011 by Fredrik Lundh and contributors
+
+Pillow is the friendly PIL fork. It is
+
+    Copyright (c) 2010 by Jeffrey A. Clark and contributors
+
+Like PIL, Pillow is licensed under the open source HPND License:
+
+By obtaining, using, and/or copying this software and/or its associated
+documentation, you agree that you have read, understood, and will comply
+with the following terms and conditions:
+
+Permission to use, copy, modify and distribute this software and its
+documentation for any purpose and without fee is hereby granted, provided
+that the above copyright notice appears in all copies, and that both that
+copyright notice and this permission notice appear in supporting
+documentation, and that the name of Secret Labs AB or the author not be
+used in advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+
+-----------------------------------------------------------------
+CairoSVG                                        (GNU Lesser General Public License v3.0)
+-----------------------------------------------------------------
+Copyright (c) 2010-2026 Kozea and contributors.
+
+Full text:
+  https://www.gnu.org/licenses/lgpl-3.0.txt
+  https://www.gnu.org/licenses/gpl-3.0.txt   (referenced by LGPL-3.0)
+
+Source code for the unmodified version of CairoSVG bundled with this
+release is available at:
+  https://pypi.org/project/cairosvg/
+
+CairoSVG itself depends on Cairo (LGPL-2.1) and other libraries; their
+licenses are reproduced by their respective distributors.
+
+
+-----------------------------------------------------------------
+certifi                                         (Mozilla Public License 2.0)
+-----------------------------------------------------------------
+Copyright (c) 2011-2026 Kenneth Reitz and contributors.
+
+Full text:
+  https://www.mozilla.org/en-US/MPL/2.0/
+
+Source code for certifi is available at:
+  https://pypi.org/project/certifi/
+  https://github.com/certifi/python-certifi
+
+certifi bundles a curated set of root CA certificates derived from the
+Mozilla CA trust store. Those certificates carry their own
+copyright/license terms — see the file `cacert.pem` distributed with
+certifi for details.
+
+
+-----------------------------------------------------------------
+PyInstaller bootloader                          (GPL-2.0-or-later WITH bootloader exception)
+-----------------------------------------------------------------
+Copyright (c) 2005-2026 PyInstaller Development Team.
+
+Full text:
+  https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt
+
+The compiled bootloader bundled with this application is distributed
+under GPL-2.0-or-later with the PyInstaller bootloader exception, which
+explicitly permits distribution of GPL-incompatible applications that
+embed the bootloader. The application code itself is not derived from
+PyInstaller and is not GPL-licensed.
+
+Source code for the unmodified PyInstaller bootloader is available at:
+  https://github.com/pyinstaller/pyinstaller
+
+
+=================================================================
+For licensing inquiries about Chairside Ready Alert itself, please
+contact: support@fieldcrestdental.com
+=================================================================
