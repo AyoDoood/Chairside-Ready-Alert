@@ -9,38 +9,22 @@ team should and should not expect to see.
 ## Paste-into-Partner-Center text
 
 ```
-Chairside Ready Alert is a LAN-only peer-to-peer messaging tool for dental
-practices. The core feature — sending one-click "Ready" alerts between
-workstations — REQUIRES TWO OR MORE DEVICES on the same local subnet and
-cannot be exercised on a single test machine.
+Chairside Ready Alert is a LAN-only peer-to-peer messaging tool for dental practices. Its core feature — one-click "Ready" alerts between workstations — REQUIRES TWO OR MORE DEVICES on the same local subnet and cannot be exercised on a single test machine.
 
-In an isolated single-VM test environment, please confirm only the
-following:
+In a single-VM test environment, please confirm only:
 
-1. The application launches without errors and the main window renders.
-2. The system tray icon appears in the notification area.
-3. The Settings menu opens (File / Settings / Network Settings... / etc.).
-4. Right-click on the tray icon shows menu items: Send Ready, Show Main
-   Window, Hide Main Window, Close Chairside Ready Alert.
-5. The application closes cleanly when "Close Chairside Ready Alert" is
-   selected from the tray menu.
+1. The app launches and the main window renders.
+2. The tray icon appears in the notification area.
+3. The Settings menu opens.
+4. Right-click on the tray icon shows: Send Ready, Show Main Window, Hide Main Window, Close.
+5. Selecting "Close" from the tray menu shuts the app down cleanly.
 
-Behavior that will NOT be observable on a single isolated machine, by
-design:
+An empty peer list and inability to send/receive alerts are EXPECTED on a single-machine test — no peer device, nothing to message.
 
-- Peer discovery (the peer list will remain empty — this is expected when
-  no other devices on the LAN are running the app).
-- Alert send/receive (no peer to send to or receive from).
-- Connection log entries beyond local startup messages.
-
-Network capability declared: the app uses local LAN broadcast (UDP/50506)
-and local LAN TCP (50505) only. It does NOT make outbound internet
-connections in normal operation. The Microsoft Store version has no
-in-app self-update mechanism; updates are delivered exclusively through
-the Store update channel.
+Network: the app uses LAN UDP broadcast on port 50506 and LAN TCP on 50505. It makes no outbound internet connections in normal operation. The Store build has no in-app self-update; updates are delivered through the Store channel only.
 
 Privacy policy: https://ayodoood.github.io/Chairside-Ready-Alert/PRIVACY_POLICY.html
-Support email: support@fieldcrestdental.com
+Support: support@fieldcrestdental.com
 ```
 
 ---
