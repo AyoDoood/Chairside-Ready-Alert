@@ -1,5 +1,8 @@
 Chairside Ready Alert - One-Click Install (Windows + macOS)
 
+If you run into trouble during install or use, check the FAQ first:
+  https://ayodoood.github.io/Chairside-Ready-Alert/FAQ.html
+
 License / ownership notice:
 - This software and project branding are proprietary to Fieldcrest Dental PC unless otherwise stated.
 - Third-party components and license summary: see THIRD_PARTY_NOTICES.md in this repository.

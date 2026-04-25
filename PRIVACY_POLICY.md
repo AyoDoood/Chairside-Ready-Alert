@@ -86,6 +86,8 @@ You can:
 - Remove local app data by uninstalling the App and deleting its local application data folder.
 - Control LAN exposure through system firewall/network policy and by stopping network mode in the app.
 
+Step-by-step instructions for each of the choices above (data folder paths, how to reset settings, how to disable updates, etc.) are in the [FAQ](https://ayodoood.github.io/Chairside-Ready-Alert/FAQ.html).
+
 ## 10. Microsoft Store and Platform Processing
 
 Microsoft may independently collect telemetry, diagnostics, or transaction data when you acquire or use apps through Microsoft Store, under Microsoft's own policies. This Privacy Policy covers data handling by Chairside Ready Alert itself.

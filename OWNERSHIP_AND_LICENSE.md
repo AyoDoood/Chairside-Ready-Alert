@@ -15,3 +15,5 @@ This project uses third-party open-source components. See `THIRD_PARTY_NOTICES.m
 ## Contact
 
 For licensing or permission requests: support@fieldcrestdental.com
+
+For usage and troubleshooting questions, see the [FAQ](https://ayodoood.github.io/Chairside-Ready-Alert/FAQ.html) before emailing support.
