@@ -176,6 +176,42 @@ subnets). If your network routes between subnets, configure
 addresses of the others. UDP discovery will be skipped and TCP
 messaging will work directly.
 
+**Q: Will the app work if some workstations are on Wi-Fi and others on Ethernet?**
+It depends on whether Wi-Fi and wired share the **same subnet**:
+
+- **Same subnet (works perfectly).** Typical modern small-office
+  setup: one router/firewall does DHCP, Wi-Fi access points run in
+  bridge / AP mode, switches just forward Ethernet frames. Every
+  device — wired or wireless — gets an IP in the same range
+  (e.g., everything is `192.168.1.x`). The app discovers peers
+  automatically with no configuration.
+- **Two separate subnets (breaks discovery).** A wired switch with
+  one DHCP source plus a Wi-Fi router plugged in via its WAN port
+  doing its *own* DHCP. Wired devices end up on (say) `192.168.1.x`
+  and Wi-Fi devices on `192.168.0.x`. UDP broadcast does not cross
+  routers/NAT, so the peer list will look empty on both sides.
+
+**How to tell which case you have:** check `ipconfig` (Windows) or
+**System Settings → Wi-Fi / Network** (macOS) on two devices. If
+the first three octets of the IPv4 addresses match, you're on the
+same subnet. If they differ, you have two subnets.
+
+**Fix for the two-subnet case:**
+
+1. *Best:* reconfigure the Wi-Fi router into AP / bridge mode so it
+   stops doing its own DHCP and just acts as a Wi-Fi extension of
+   the wired network. Most consumer routers have a "Bridge" or "AP
+   Mode" toggle in their admin UI.
+2. *Workaround:* fill in **Manual peer IPs** in Settings on every
+   workstation. If a Wi-Fi PC is behind NAT, the wired PCs also
+   need a TCP port forward (`50505` → the Wi-Fi PC) configured on
+   the Wi-Fi router. This works but is fragile and harder to
+   maintain than fixing the topology.
+
+The app does not crash or get confused on mixed setups — it simply
+won't see peers it can't reach. Peers idle for more than 12 seconds
+are pruned automatically.
+
 **Q: Can it work over the internet / between offices?**
 Not by design. The app is intentionally LAN-only — there is no
 relay server, no NAT traversal, and no end-to-end encryption.
