@@ -14,6 +14,11 @@ chmod +x \
   2>/dev/null || true
 SOURCE_PY="$SCRIPT_DIR/chairside_ready_alert.py"
 INSTALL_DIR="$HOME/Library/Application Support/ChairsideReadyAlert"
+APPS_DIR="$HOME/Applications"
+# Canonical .app location — appears in Launchpad and Spotlight, matches macOS conventions.
+APP_BUNDLE="$APPS_DIR/Chairside Ready Alert.app"
+# Legacy Desktop path; kept so old installs can be cleaned up and so a Desktop
+# shortcut symlink can be placed for users who like having one there.
 DESKTOP_APP="$HOME/Desktop/Chairside Ready Alert.app"
 BUNDLE_VERSION="$(date +%s)"
 
@@ -384,12 +389,11 @@ VENV_SITE_PKGS="${VENV_DIR}/lib/python${PY_MM}/site-packages"
 LAUNCH_BIN="$RUNTIME_PY"
 printf '%s\n' "$LAUNCH_BIN" > "$INSTALL_DIR/python_desktop_launcher_path.txt"
 
-# Remove older Desktop launchers from previous installs (avoid duplicates).
-rm -f "$HOME/Desktop/Chairside Ready Alert.command"
-rm -rf "$HOME/Desktop/Chairside Ready Alert Shortcut.app"
-if [[ -d "$DESKTOP_APP" ]]; then
-  # Ensure old app bundle is fully closed before replacement.
-  osascript >/dev/null 2>&1 <<'OSA' || true
+# Ensure ~/Applications/ exists (macOS does not create it by default).
+mkdir -p "$APPS_DIR"
+
+# Quit any running copy before replacing the bundle.
+osascript >/dev/null 2>&1 <<'OSA' || true
 tell application "System Events"
   set appName to "Chairside Ready Alert"
   if exists (application process appName) then
@@ -399,18 +403,32 @@ tell application "System Events"
   end if
 end tell
 OSA
-  sleep 0.4
-  rm -rf "$DESKTOP_APP" 2>/dev/null || true
-  if [[ -d "$DESKTOP_APP" ]]; then
-    mv -f "$DESKTOP_APP" "${DESKTOP_APP}.old.$(date +%s)" 2>/dev/null || true
+sleep 0.4
+
+# Remove older Desktop artifacts from prior installs (.command launcher, old shortcut .app,
+# old full .app bundle on Desktop — superseded by the ~/Applications/ install + symlink).
+rm -f  "$HOME/Desktop/Chairside Ready Alert.command"
+rm -rf "$HOME/Desktop/Chairside Ready Alert Shortcut.app"
+if [[ -L "$DESKTOP_APP" ]]; then
+  rm -f "$DESKTOP_APP"
+elif [[ -d "$DESKTOP_APP" ]]; then
+  # Old full bundle on Desktop — move aside so settings survive even if user has it open.
+  mv -f "$DESKTOP_APP" "${DESKTOP_APP}.old.$(date +%s)" 2>/dev/null || rm -rf "$DESKTOP_APP" 2>/dev/null || true
+fi
+
+# Remove any prior canonical bundle so we can replace it atomically.
+if [[ -d "$APP_BUNDLE" ]]; then
+  rm -rf "$APP_BUNDLE" 2>/dev/null || true
+  if [[ -d "$APP_BUNDLE" ]]; then
+    mv -f "$APP_BUNDLE" "${APP_BUNDLE}.old.$(date +%s)" 2>/dev/null || true
   fi
 fi
 
-# Minimal .app bundle: double-click shows a normal app icon (no Terminal window).
-TMP_DESKTOP_APP="${DESKTOP_APP}.tmp.$$"
-rm -rf "$TMP_DESKTOP_APP" 2>/dev/null || true
-APP_MACOS="$TMP_DESKTOP_APP/Contents/MacOS"
-APP_RES="$TMP_DESKTOP_APP/Contents/Resources"
+# Build the bundle in a tmp directory next to the canonical location, then atomically move.
+TMP_APP_BUNDLE="${APP_BUNDLE}.tmp.$$"
+rm -rf "$TMP_APP_BUNDLE" 2>/dev/null || true
+APP_MACOS="$TMP_APP_BUNDLE/Contents/MacOS"
+APP_RES="$TMP_APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_MACOS" "$APP_RES"
 
 generate_chairside_icns() {
@@ -613,18 +631,23 @@ fi
   echo '  <string>'"$BUNDLE_VERSION"'</string>'
   echo '</dict>'
   echo '</plist>'
-} > "$TMP_DESKTOP_APP/Contents/Info.plist"
+} > "$TMP_APP_BUNDLE/Contents/Info.plist"
 
-# Replace Desktop app bundle atomically to avoid stale icon metadata on reinstall.
-rm -rf "$DESKTOP_APP" 2>/dev/null || true
-mv -f "$TMP_DESKTOP_APP" "$DESKTOP_APP"
+# Move the freshly-built bundle into ~/Applications/ atomically.
+mv -f "$TMP_APP_BUNDLE" "$APP_BUNDLE"
+
+# Place a symlink on the Desktop pointing at the canonical bundle so users who are
+# used to launching from the Desktop still can. Double-clicking the symlink follows
+# to the real app.
+ln -sfn "$APP_BUNDLE" "$DESKTOP_APP"
 
 echo ""
 echo "Install complete."
-echo "Desktop shortcut: Chairside Ready Alert.app"
+echo "  Application:      $APP_BUNDLE   (also visible in Launchpad and Spotlight)"
+echo "  Desktop shortcut: $DESKTOP_APP   (symlink)"
 echo ""
 echo "Launching Chairside Ready Alert..."
-open "$DESKTOP_APP"
+open "$APP_BUNDLE"
 echo "Done."
 
 # Auto-close installer terminal window after successful launch.

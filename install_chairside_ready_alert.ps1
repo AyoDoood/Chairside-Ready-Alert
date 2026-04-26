@@ -492,6 +492,7 @@ Searched:
         "Install Chairside Ready Alert.bat",
         "Install Chairside Ready Alert macOS.command",
         "install_chairside_ready_alert_macos.sh",
+        "uninstall_chairside_ready_alert.ps1",
         "README-Windows-One-Click.txt",
         "version.json",
         "version.json.example"
@@ -541,10 +542,52 @@ cd /d "%~dp0"
     $shortcut.IconLocation = $shortcutIconLocation
     $shortcut.Save()
 
+    Write-Info "Creating Start Menu entry..."
+    $startMenuFolder = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Chairside Ready Alert"
+    New-Item -ItemType Directory -Path $startMenuFolder -Force | Out-Null
+    $startMenuShortcut = Join-Path $startMenuFolder "Chairside Ready Alert.lnk"
+    if (Test-Path -LiteralPath $startMenuShortcut) {
+        Remove-Item -LiteralPath $startMenuShortcut -Force -ErrorAction SilentlyContinue
+    }
+    $smShortcut = $shell.CreateShortcut($startMenuShortcut)
+    $smShortcut.TargetPath = $pythonwPath
+    $smShortcut.Arguments = "`"$installDir\chairside_ready_alert.py`""
+    $smShortcut.WorkingDirectory = $installDir
+    $smShortcut.IconLocation = $shortcutIconLocation
+    $smShortcut.Save()
+
+    Write-Info "Registering with Apps & Features..."
+    $appVersion = "1.0.6"
+    $versionFile = Join-Path $installDir "version.json"
+    if (Test-Path -LiteralPath $versionFile) {
+        try {
+            $versionInfo = Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json
+            if ($versionInfo.version) { $appVersion = [string]$versionInfo.version }
+        } catch {}
+    }
+    $uninstallerInInstall = Join-Path $installDir "uninstall_chairside_ready_alert.ps1"
+    $iconForRegistry = if ($iconPath -and (Test-Path -LiteralPath $iconPath)) { $iconPath } else { $pythonwPath }
+    $regKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ChairsideReadyAlert"
+    New-Item -Path $regKey -Force | Out-Null
+    Set-ItemProperty -Path $regKey -Name "DisplayName"     -Value "Chairside Ready Alert"
+    Set-ItemProperty -Path $regKey -Name "DisplayVersion"  -Value $appVersion
+    Set-ItemProperty -Path $regKey -Name "Publisher"       -Value "Fieldcrest Dental PC"
+    Set-ItemProperty -Path $regKey -Name "InstallLocation" -Value $installDir
+    Set-ItemProperty -Path $regKey -Name "DisplayIcon"     -Value $iconForRegistry
+    Set-ItemProperty -Path $regKey -Name "UninstallString" -Value ("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"" + $uninstallerInInstall + "`" -Force")
+    Set-ItemProperty -Path $regKey -Name "URLInfoAbout"    -Value "https://ayodoood.github.io/Chairside-Ready-Alert/"
+    Set-ItemProperty -Path $regKey -Name "URLUpdateInfo"   -Value "https://ayodoood.github.io/Chairside-Ready-Alert/"
+    Set-ItemProperty -Path $regKey -Name "NoModify"        -Value 1 -Type DWord
+    Set-ItemProperty -Path $regKey -Name "NoRepair"        -Value 1 -Type DWord
+    Set-ItemProperty -Path $regKey -Name "EstimatedSize"   -Value 100000 -Type DWord
+
     Write-Info "Launching Chairside Ready Alert..."
     Start-Process -FilePath $pythonwPath -ArgumentList "`"$installDir\chairside_ready_alert.py`"" -WorkingDirectory $installDir
 
-    Write-Info "Install complete. Use Desktop shortcut: Chairside Ready Alert"
+    Write-Info "Install complete."
+    Write-Info "  Desktop shortcut: Chairside Ready Alert"
+    Write-Info "  Start Menu: Chairside Ready Alert"
+    Write-Info "  Settings -> Apps -> Installed apps lists 'Chairside Ready Alert' (uninstall there or via Apps & Features)."
 } catch {
     Write-Host ""
     Write-Host "[Chairside Ready Alert] Installation failed." -ForegroundColor Red

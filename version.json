@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Microsoft Store readiness: routes startup logs to the writable user data dir, gates the in-app update menu on frozen builds (Store policy), bundles third-party license texts next to the EXE, and clarifies the privacy policy on LAN broadcasts.",
+  "release_notes": "Direct installers now register the app like a native Windows or macOS install: Start Menu + Apps & Features entry on Windows (with a real uninstaller), and ~/Applications/ canonical install with Launchpad/Spotlight visibility on macOS.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

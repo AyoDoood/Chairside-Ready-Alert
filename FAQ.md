@@ -45,8 +45,13 @@ include Tkinter, which is why the app needs python.org Python.
 
 **Q: Where is the app actually installed?**
 - **Windows direct installer:** `%LOCALAPPDATA%\ChairsideReadyAlert\`
-- **macOS:** `~/Library/Application Support/ChairsideReadyAlert/`
+- **macOS:** `~/Applications/Chairside Ready Alert.app` (the bundle), with support files at `~/Library/Application Support/ChairsideReadyAlert/`. A symlink on the Desktop points at the bundle.
 - **Microsoft Store version:** managed by Windows; you don't need to know the path.
+
+**Q: How do I uninstall the app?**
+- **Microsoft Store version (Windows):** **Settings → Apps → Installed apps**, find Chairside Ready Alert, click the three dots → **Uninstall**. The Store handles everything.
+- **Direct installer (Windows):** **Settings → Apps → Installed apps**, find Chairside Ready Alert, click the three dots → **Uninstall**. (The installer registers an Apps & Features entry, same as any standard Windows app.) Settings are kept by default; to remove them too, run the uninstaller manually with `-RemoveSettings` from `%LOCALAPPDATA%\ChairsideReadyAlert\uninstall_chairside_ready_alert.ps1`.
+- **macOS:** drag `Chairside Ready Alert.app` from `~/Applications/` to the Trash. Optionally also delete `~/Library/Application Support/ChairsideReadyAlert/` to remove settings.
 
 ---
 

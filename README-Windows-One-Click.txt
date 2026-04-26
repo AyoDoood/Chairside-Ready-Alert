@@ -57,7 +57,14 @@ Windows install steps:
 2) Double-click: Install Chairside Ready Alert.bat
 3) Installer automatically closes any running Chairside Ready Alert instance (including tray) before updating.
 4) Wait for setup to complete.
-5) Open Desktop shortcut: Chairside Ready Alert
+5) Launch from any of:
+   - Desktop shortcut: Chairside Ready Alert
+   - Start Menu: Chairside Ready Alert
+   - Search: type "Chairside" and press Enter
+
+To uninstall on Windows:
+- Settings -> Apps -> Installed apps -> Chairside Ready Alert -> Uninstall
+- Settings (chairside_ready_alert_config.json) are preserved by default. To remove them too, run uninstall_chairside_ready_alert.ps1 manually with the -RemoveSettings flag.
 
 macOS install files:
 - Install Chairside Ready Alert macOS.command (or run install_chairside_ready_alert_macos.sh — works when ZIP strips +x, see below)
@@ -73,4 +80,11 @@ macOS install steps:
 4) If macOS blocks it, open System Settings > Privacy & Security and allow it.
 5) If no suitable Python with Tkinter is found, the installer downloads the official python.org macOS package (includes Tcl/Tk) or uses the optional .pkg next to it, then installs it — you will be asked for an administrator password once.
 6) Installer automatically closes any running Chairside Ready Alert instance (including menu-bar/tray) before updating.
-7) Launch from Desktop: Chairside Ready Alert.app (double-click the icon).
+7) Launch from any of:
+   - ~/Applications/Chairside Ready Alert.app (the canonical install location — also visible in Launchpad)
+   - Spotlight: Cmd+Space, type "Chairside"
+   - Desktop: Chairside Ready Alert.app (a symlink to the canonical bundle)
+
+To uninstall on macOS:
+- Drag ~/Applications/Chairside Ready Alert.app to the Trash.
+- Optionally also delete ~/Library/Application Support/ChairsideReadyAlert/ to remove settings.
