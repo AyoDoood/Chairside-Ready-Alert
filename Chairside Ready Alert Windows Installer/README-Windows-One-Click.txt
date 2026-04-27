@@ -83,7 +83,7 @@ macOS install steps:
 7) Launch from any of:
    - ~/Applications/Chairside Ready Alert.app (the canonical install location — also visible in Launchpad)
    - Spotlight: Cmd+Space, type "Chairside"
-   - Desktop: Chairside Ready Alert.app (a symlink to the canonical bundle)
+   - Desktop: "Chairside Ready Alert" (a Finder alias to the canonical bundle)
 
 To uninstall on macOS:
 - Drag ~/Applications/Chairside Ready Alert.app to the Trash.

@@ -17,9 +17,11 @@ INSTALL_DIR="$HOME/Library/Application Support/ChairsideReadyAlert"
 APPS_DIR="$HOME/Applications"
 # Canonical .app location — appears in Launchpad and Spotlight, matches macOS conventions.
 APP_BUNDLE="$APPS_DIR/Chairside Ready Alert.app"
-# Legacy Desktop path; kept so old installs can be cleaned up and so a Desktop
-# shortcut symlink can be placed for users who like having one there.
-DESKTOP_APP="$HOME/Desktop/Chairside Ready Alert.app"
+# Legacy Desktop paths — cleaned up on every install. The new Desktop shortcut is a
+# real Finder alias (created via osascript) named without the .app extension, since
+# alias files aren't bundles and the .app suffix confused Finder in earlier 1.0.7 builds.
+DESKTOP_APP_LEGACY="$HOME/Desktop/Chairside Ready Alert.app"
+DESKTOP_ALIAS="$HOME/Desktop/Chairside Ready Alert"
 BUNDLE_VERSION="$(date +%s)"
 
 # Official python.org macOS universal2 installer — includes Tcl/Tk (Tkinter works).
@@ -406,15 +408,21 @@ OSA
 sleep 0.4
 
 # Remove older Desktop artifacts from prior installs (.command launcher, old shortcut .app,
-# old full .app bundle on Desktop — superseded by the ~/Applications/ install + symlink).
+# old full .app bundle on Desktop, broken 1.0.7 symlinks, old aliases — all superseded by
+# the new ~/Applications/ install + Finder alias on the Desktop).
 rm -f  "$HOME/Desktop/Chairside Ready Alert.command"
 rm -rf "$HOME/Desktop/Chairside Ready Alert Shortcut.app"
-if [[ -L "$DESKTOP_APP" ]]; then
-  rm -f "$DESKTOP_APP"
-elif [[ -d "$DESKTOP_APP" ]]; then
-  # Old full bundle on Desktop — move aside so settings survive even if user has it open.
-  mv -f "$DESKTOP_APP" "${DESKTOP_APP}.old.$(date +%s)" 2>/dev/null || rm -rf "$DESKTOP_APP" 2>/dev/null || true
+# Old / broken .app entries on the Desktop (symlink, real bundle, or old alias).
+if [[ -L "$DESKTOP_APP_LEGACY" ]]; then
+  rm -f "$DESKTOP_APP_LEGACY"
+elif [[ -d "$DESKTOP_APP_LEGACY" ]]; then
+  mv -f "$DESKTOP_APP_LEGACY" "${DESKTOP_APP_LEGACY}.old.$(date +%s)" 2>/dev/null || rm -rf "$DESKTOP_APP_LEGACY" 2>/dev/null || true
+elif [[ -e "$DESKTOP_APP_LEGACY" ]]; then
+  # Could be a stale Finder alias file with a .app suffix — just remove it.
+  rm -f "$DESKTOP_APP_LEGACY"
 fi
+# Existing alias from a previous install (no .app suffix).
+[[ -e "$DESKTOP_ALIAS" || -L "$DESKTOP_ALIAS" ]] && rm -f "$DESKTOP_ALIAS"
 
 # Remove any prior canonical bundle so we can replace it atomically.
 if [[ -d "$APP_BUNDLE" ]]; then
@@ -636,15 +644,32 @@ fi
 # Move the freshly-built bundle into ~/Applications/ atomically.
 mv -f "$TMP_APP_BUNDLE" "$APP_BUNDLE"
 
-# Place a symlink on the Desktop pointing at the canonical bundle so users who are
-# used to launching from the Desktop still can. Double-clicking the symlink follows
-# to the real app.
-ln -sfn "$APP_BUNDLE" "$DESKTOP_APP"
+# Create a real Finder alias on the Desktop pointing at the canonical bundle. Symlinks
+# to .app bundles are unreliable in macOS Finder (LaunchServices treats them as plain
+# files in some cases); a Finder alias has the proper resource-fork metadata so
+# double-clicking launches the target app and the icon resolves correctly.
+osascript >/dev/null 2>&1 <<OSA || true
+tell application "Finder"
+  try
+    set targetItem to POSIX file "$APP_BUNDLE" as alias
+    set desktopFolder to (path to desktop folder)
+    -- Best-effort cleanup of any prior alias by either name.
+    try
+      delete (every item of desktopFolder whose name is "Chairside Ready Alert")
+    end try
+    try
+      delete (every item of desktopFolder whose name is "Chairside Ready Alert.app")
+    end try
+    set newAlias to make new alias file at desktopFolder to targetItem
+    set name of newAlias to "Chairside Ready Alert"
+  end try
+end tell
+OSA
 
 echo ""
 echo "Install complete."
 echo "  Application:      $APP_BUNDLE   (also visible in Launchpad and Spotlight)"
-echo "  Desktop shortcut: $DESKTOP_APP   (symlink)"
+echo "  Desktop shortcut: $DESKTOP_ALIAS   (Finder alias)"
 echo ""
 echo "Launching Chairside Ready Alert..."
 open "$APP_BUNDLE"

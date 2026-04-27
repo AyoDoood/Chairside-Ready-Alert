@@ -45,7 +45,7 @@ include Tkinter, which is why the app needs python.org Python.
 
 **Q: Where is the app actually installed?**
 - **Windows direct installer:** `%LOCALAPPDATA%\ChairsideReadyAlert\`
-- **macOS:** `~/Applications/Chairside Ready Alert.app` (the bundle), with support files at `~/Library/Application Support/ChairsideReadyAlert/`. A symlink on the Desktop points at the bundle.
+- **macOS:** `~/Applications/Chairside Ready Alert.app` (the bundle), with support files at `~/Library/Application Support/ChairsideReadyAlert/`. A Finder alias named **Chairside Ready Alert** is placed on the Desktop and points at the canonical bundle.
 - **Microsoft Store version:** managed by Windows; you don't need to know the path.
 
 **Q: How do I uninstall the app?**

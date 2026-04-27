@@ -1,7 +1,7 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Direct installers now register the app like a native Windows or macOS install: Start Menu + Apps & Features entry on Windows (with a real uninstaller), and ~/Applications/ canonical install with Launchpad/Spotlight visibility on macOS.",
+  "release_notes": "Fixes the macOS Desktop shortcut from 1.0.7. Replaces the broken .app symlink with a real Finder alias (named \"Chairside Ready Alert\", no .app suffix) so double-clicking launches the canonical app in ~/Applications/ correctly.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
