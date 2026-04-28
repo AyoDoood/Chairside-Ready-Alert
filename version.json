@@ -1,7 +1,7 @@
 {
-  "version": "1.0.11",
+  "version": "1.0.12",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Menu bar reorganized: new Help menu hosts Connection log, Windows Tray Icon Setup, Stop/Start Network, and an About dialog with the support@fieldcrestdental.com contact (please allow 24-48 hours for a response). Settings is trimmed — Tray diagnostics and the duplicate Send Ready (Tray) entry have been removed. The tray icon's Send Ready action is unchanged.",
+  "release_notes": "Windows direct-install (.bat) now pre-approves the LAN firewall rules during install via a single UAC prompt, so the app no longer triggers a separate 'Allow Python to communicate' prompt on first launch. The uninstaller cleans the rules back up automatically. No change to the Microsoft Store build (its firewall behavior is governed by the privateNetworkClientServer manifest capability).",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

@@ -169,6 +169,63 @@ function Install-TrayDependencies {
     }
 }
 
+function Add-FirewallRules {
+    param([string]$PythonwPath)
+
+    if (-not $PythonwPath -or -not (Test-Path -LiteralPath $PythonwPath)) {
+        Write-Host "[Chairside Ready Alert] Skipping firewall rules: pythonw.exe path not resolved." -ForegroundColor Yellow
+        return
+    }
+
+    $tcpName = "Chairside Ready Alert (Inbound TCP 50505)"
+    $udpName = "Chairside Ready Alert (Inbound UDP 50506)"
+    $group   = "Chairside Ready Alert"
+    $pyEsc   = $PythonwPath -replace "'", "''"
+
+    # Inline script that runs elevated. Idempotent: removes any prior rules with the
+    # same display name first, then re-creates them scoped to this pythonw.exe.
+    $ruleScript = @"
+`$ErrorActionPreference = 'Continue'
+Get-NetFirewallRule -DisplayName '$tcpName' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName '$udpName' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName '$tcpName' -Group '$group' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 50505 -Program '$pyEsc' -Profile Domain,Private,Public | Out-Null
+New-NetFirewallRule -DisplayName '$udpName' -Group '$group' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 50506 -Program '$pyEsc' -Profile Domain,Private,Public | Out-Null
+"@
+
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($isAdmin) {
+        Write-Info "Adding Windows Firewall rules for LAN messaging..."
+        try {
+            Invoke-Expression $ruleScript
+            Write-Info "Firewall rules added."
+        } catch {
+            Write-Host "[Chairside Ready Alert] Warning: could not add firewall rules: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        return
+    }
+
+    # Not elevated — spawn an elevated child PowerShell for just this step. The user
+    # will see one UAC prompt. If they dismiss it, the app still works but Windows
+    # will prompt them on first launch instead.
+    Write-Info "Adding Windows Firewall rules (you'll see a UAC prompt)..."
+    $tempScript = Join-Path $env:TEMP ("chairside_fw_" + [System.Guid]::NewGuid().ToString() + ".ps1")
+    try {
+        Set-Content -LiteralPath $tempScript -Value $ruleScript -Encoding UTF8
+        $proc = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$tempScript`"") `
+            -Verb RunAs -Wait -PassThru -ErrorAction Stop
+        if ($proc.ExitCode -eq 0) {
+            Write-Info "Firewall rules added."
+        } else {
+            Write-Host "[Chairside Ready Alert] Warning: firewall rule script exited with code $($proc.ExitCode)." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[Chairside Ready Alert] Skipped firewall rules (UAC declined or unavailable). Windows will ask once on first launch — choose 'Private networks' and click Allow." -ForegroundColor Yellow
+    } finally {
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Stop-RunningChairsideReadyAlert {
     param([int]$GraceSeconds = 12)
     Write-Info "Checking for running Chairside Ready Alert..."
@@ -580,6 +637,8 @@ cd /d "%~dp0"
     Set-ItemProperty -Path $regKey -Name "NoModify"        -Value 1 -Type DWord
     Set-ItemProperty -Path $regKey -Name "NoRepair"        -Value 1 -Type DWord
     Set-ItemProperty -Path $regKey -Name "EstimatedSize"   -Value 100000 -Type DWord
+
+    Add-FirewallRules -PythonwPath $pythonwPath
 
     Write-Info "Launching Chairside Ready Alert..."
     Start-Process -FilePath $pythonwPath -ArgumentList "`"$installDir\chairside_ready_alert.py`"" -WorkingDirectory $installDir

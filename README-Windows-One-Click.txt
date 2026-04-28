@@ -56,14 +56,17 @@ Windows install steps:
 1) Put all Windows install files in one folder (the .bat, install_chairside_ready_alert.ps1, and chairside_ready_alert.py must stay together — do not copy only the .bat to the Desktop).
 2) Double-click: Install Chairside Ready Alert.bat
 3) Installer automatically closes any running Chairside Ready Alert instance (including tray) before updating.
-4) Wait for setup to complete.
-5) Launch from any of:
+4) Near the end of setup, Windows will show ONE User Account Control (UAC) prompt — "Do you want to allow this app to make changes to your device?" Click YES. This is the installer pre-approving the LAN firewall rules so the app can send and receive alerts without prompting you again later.
+   - If you click No: the install still finishes, but on first launch Windows will pop up "Allow Chairside Ready Alert to communicate on these networks". Check the "Private networks" box and click Allow.
+5) Wait for "Install complete".
+6) Launch from any of:
    - Desktop shortcut: Chairside Ready Alert
    - Start Menu: Chairside Ready Alert
    - Search: type "Chairside" and press Enter
 
 To uninstall on Windows:
 - Settings -> Apps -> Installed apps -> Chairside Ready Alert -> Uninstall
+- A UAC prompt will appear once during uninstall to remove the LAN firewall rules. Click Yes (clicking No still uninstalls the app — the firewall rules will simply stay behind harmlessly and can be removed manually from Windows Defender Firewall with Advanced Security).
 - Settings (chairside_ready_alert_config.json) are preserved by default. To remove them too, run uninstall_chairside_ready_alert.ps1 manually with the -RemoveSettings flag.
 
 macOS install files:

@@ -75,6 +75,30 @@ Remove-Item -LiteralPath $autostartBat -Force -ErrorAction SilentlyContinue
 Write-Info "Removing Apps & Features registry entry..."
 Remove-Item -Path $regKey -Recurse -Force -ErrorAction SilentlyContinue
 
+Write-Info "Removing Windows Firewall rules..."
+$fwScript = @"
+`$ErrorActionPreference = 'Continue'
+Get-NetFirewallRule -Group 'Chairside Ready Alert' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName 'Chairside Ready Alert (Inbound TCP 50505)' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName 'Chairside Ready Alert (Inbound UDP 50506)' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+"@
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    try { Invoke-Expression $fwScript } catch {}
+} else {
+    $tempFw = Join-Path $env:TEMP ("chairside_fw_uninstall_" + [System.Guid]::NewGuid().ToString() + ".ps1")
+    try {
+        Set-Content -LiteralPath $tempFw -Value $fwScript -Encoding UTF8
+        Start-Process -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$tempFw`"") `
+            -Verb RunAs -Wait -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Info "Skipped firewall rule cleanup (UAC declined). Remove them manually from 'Windows Defender Firewall with Advanced Security' if desired."
+    } finally {
+        Remove-Item -LiteralPath $tempFw -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if (-not (Test-Path -LiteralPath $installDir)) {
     Write-Info "Install directory is already gone."
 } elseif ($RemoveSettings) {
