@@ -87,6 +87,17 @@ jobs:
           $manifest = $manifest -replace "ARCH_PLACEHOLDER", "${{ matrix.arch }}"
           Set-Content -Path (Join-Path $stage "AppxManifest.xml") -Value $manifest -Encoding UTF8
 
+          # If the user hasn't pasted the three Partner Center identity values yet,
+          # skip MSIX packaging so the EXE artifacts still ship cleanly. The user
+          # will see the warning and an empty -msix artifact; once they replace the
+          # placeholders the next tag will produce real .msix files.
+          if ($manifest -match "REPLACE_WITH_PARTNER_CENTER_") {
+            Write-Host "::warning::AppxManifest.xml still contains REPLACE_WITH_PARTNER_CENTER_ placeholders. Skipping MSIX packaging for ${{ matrix.arch }}. Paste the three identity values from Partner Center to enable Store-ready MSIX builds."
+            echo "MSIX_READY=false" >> $env:GITHUB_ENV
+          } else {
+            echo "MSIX_READY=true" >> $env:GITHUB_ENV
+          }
+
           # Echo the final manifest for build-log auditability.
           Write-Host "----- AppxManifest.xml (after substitution) -----"
           Get-Content -Path (Join-Path $stage "AppxManifest.xml") | Where-Object { $_ -match '<Identity|Version|Architecture|Publisher|<DisplayName' } | Write-Host
@@ -95,6 +106,7 @@ jobs:
           echo "MSIX_STAGE=$stage" >> $env:GITHUB_ENV
 
       - name: Pack MSIX
+        if: env.MSIX_READY == 'true'
         shell: pwsh
         run: |
           # Locate MakeAppx.exe in the most recent Windows 10 SDK.
@@ -126,6 +138,7 @@ jobs:
           echo "MSIX_OUTPUT=$output" >> $env:GITHUB_ENV
 
       - name: Upload MSIX artifact
+        if: env.MSIX_READY == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ChairsideReadyAlert-${{ matrix.arch }}-msix

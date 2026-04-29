@@ -1,5 +1,5 @@
 {
-  "version": "1.0.14",
+  "version": "1.0.15",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
   "release_notes": "Adds the MSIX packaging path for Microsoft Store submissions. Each tagged release now produces three architecture-specific .msix files (x64/x86/arm64) alongside the existing direct-installer EXE folders. The Partner Center identity values are paste-in placeholders in AppxManifest.xml. See Windows Store Submission/MSIX_SUBMISSION.md for the submission walk-through.",
   "files": {
