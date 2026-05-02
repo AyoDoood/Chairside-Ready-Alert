@@ -1,7 +1,7 @@
 {
-  "version": "1.0.20",
+  "version": "1.0.21",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Fixes the Microsoft Store launch flow. The subscription paywall is now reliably brought to the foreground with its own taskbar entry on first launch, so it cannot end up hidden behind another window. Also separates dev-install and Store-install single-instance locks (and IPC ports) so a developer running the .py directly no longer collides with the Store-installed copy on the same machine.",
+  "release_notes": "Adds diagnostic logging for the Microsoft Store subscription gate so first-purchase failures surface a real reason in startup_log.txt instead of a silent generic error — needed to debug ARM64 Store purchase failures. Refreshes the welcome / paywall window with the Modern Blue theme and reframes it around the 7-day free trial: rounded card, themed buttons, friendlier copy. The subscription gate logic itself is unchanged; trial state is honored by the same is_active flag from Microsoft Store, so the 7-day trial works as soon as the Add-on is configured with one in Partner Center.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

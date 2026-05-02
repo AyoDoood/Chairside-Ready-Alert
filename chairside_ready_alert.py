@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.20"
+APP_VERSION = "1.0.21"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -273,12 +273,14 @@ def _resolve_config_path() -> str:
 # ============================================================================
 # Microsoft Store subscription gate (Microsoft Store / MSIX builds only)
 #
-# The Microsoft Store build is "free download, $1.99/month subscription".
-# Purchase, billing, renewal, cancellation, and refunds are handled by
-# Microsoft Store via an in-app subscription Add-on. The app's job is to
-# (a) ask Microsoft whether the current Microsoft account has an active
-# subscription, (b) cache that answer for offline tolerance, and
-# (c) gate functionality behind it.
+# The Microsoft Store build is "free download, 7-day free trial, $1.99/month
+# subscription thereafter". Purchase, billing, renewal, cancellation, refunds,
+# and trial-used tracking are all handled by Microsoft Store via an in-app
+# subscription Add-on. The app's job is to (a) ask Microsoft whether the
+# current Microsoft account has an active subscription (trial counts as
+# active), (b) cache that answer for offline tolerance, and (c) gate
+# functionality behind it. The 7-day trial period is a Partner Center
+# configuration on the Add-on — no code change needed for the gate.
 #
 # This entire subsystem is a no-op when not running as a frozen Microsoft
 # Store build:
@@ -342,7 +344,11 @@ def _check_store_subscription_live() -> Optional[bool]:
         # Imports deferred so non-Windows / non-frozen builds never hit them.
         import asyncio  # noqa: WPS433 — local import is intentional
         from winrt.windows.services.store import StoreContext  # type: ignore
-    except Exception:
+    except Exception as exc:
+        _append_startup_log(
+            f"_check_store_subscription_live: winrt import failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
         return None
     try:
         async def _query() -> bool:
@@ -358,7 +364,11 @@ def _check_store_subscription_live() -> Optional[bool]:
             return loop.run_until_complete(_query())
         finally:
             loop.close()
-    except Exception:
+    except Exception as exc:
+        _append_startup_log(
+            f"_check_store_subscription_live: Store query failed: "
+            f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+        )
         return None
 
 
@@ -382,13 +392,22 @@ def request_subscription_purchase() -> bool:
     try:
         import asyncio  # noqa: WPS433
         from winrt.windows.services.store import StoreContext, StorePurchaseStatus  # type: ignore
-    except Exception:
+    except Exception as exc:
+        _append_startup_log(
+            f"request_subscription_purchase: winrt import failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
         return False
     try:
         async def _buy() -> bool:
             ctx = StoreContext.get_default()
             result = await ctx.request_purchase_async(SUBSCRIPTION_ADDON_PRODUCT_ID)
-            return getattr(result, "status", None) == StorePurchaseStatus.SUCCEEDED
+            status = getattr(result, "status", None)
+            _append_startup_log(
+                f"request_subscription_purchase: RequestPurchaseAsync "
+                f"returned status={status!r} for product_id={SUBSCRIPTION_ADDON_PRODUCT_ID!r}"
+            )
+            return status == StorePurchaseStatus.SUCCEEDED
         loop = asyncio.new_event_loop()
         try:
             ok = loop.run_until_complete(_buy())
@@ -397,7 +416,11 @@ def request_subscription_purchase() -> bool:
         if ok:
             _write_subscription_cache({"active": True, "last_checked": time.time()})
         return ok
-    except Exception:
+    except Exception as exc:
+        _append_startup_log(
+            f"request_subscription_purchase: Store call failed: "
+            f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
+        )
         return False
 
 
@@ -3947,57 +3970,82 @@ def _notify_existing_instance_focus() -> bool:
 
 
 def _run_subscription_paywall(root: tk.Tk) -> bool:
-    """Modal paywall shown before the main UI when no active subscription.
-    Returns True if the user successfully subscribed (proceed to main UI),
-    False if they chose to quit. Only called for the frozen Store build."""
+    """Modal welcome / paywall shown before the main UI when no active
+    subscription. Themed to match the app's Modern Blue look. Returns True
+    if the user successfully started a trial or subscription, False if they
+    chose to quit. Only called for the frozen Store build."""
+    t = THEMES["Modern Blue"]
+
     win = tk.Toplevel(root)
-    win.title("Chairside Ready Alert — Subscription required")
+    win.title("Welcome to Chairside Ready Alert")
+    win.configure(bg=t["bg"])
     win.resizable(False, False)
     win.protocol("WM_DELETE_WINDOW", lambda: None)  # X disabled — must use a button
 
     outcome: dict[str, bool] = {"subscribed": False, "quit": False}
 
-    body = ttk.Frame(win, padding=(24, 20, 24, 16))
-    body.pack(fill="both", expand=True)
+    outer = tk.Frame(win, bg=t["bg"], padx=22, pady=22)
+    outer.pack(fill="both", expand=True)
 
-    ttk.Label(body, text="Subscribe to Chairside Ready Alert",
-              font=_ui_font(14, "bold")).pack(anchor="w")
-    ttk.Label(body, text="$1.99 / month — billed and managed by Microsoft Store.",
-              font=_ui_font(11)).pack(anchor="w", pady=(2, 12))
-    ttk.Label(
+    card = RoundedCard(outer, bg=t["card_bg"], outer_bg=t["bg"],
+                       radius=14, padding=24, border=t["card_border"])
+    card.pack(fill="both", expand=True)
+    body = card.inner_frame
+
+    tk.Label(body, text="Welcome to Chairside Ready Alert",
+             font=_ui_font(18, "bold"),
+             fg=t["title"], bg=t["card_bg"]).pack(anchor="w")
+    tk.Label(body,
+             text="Free for 7 days. $1.99 / month after — billed and managed by Microsoft Store.",
+             font=_ui_font(11),
+             fg=t["sub"], bg=t["card_bg"],
+             wraplength=440, justify="left").pack(anchor="w", pady=(4, 16))
+
+    tk.Label(
         body,
-        text=("LAN messaging between dental workstations. One Microsoft\n"
-              "account covers up to 10 devices. Cancel anytime in Microsoft\n"
-              "Store. Your alert messages stay on your local network — they\n"
+        text=("LAN messaging between dental workstations. One Microsoft "
+              "account covers up to 10 devices. Cancel any time in Microsoft "
+              "Store. Your alert messages stay on your local network — they "
               "never go through any cloud service."),
-        font=_ui_font(10), justify="left",
-    ).pack(anchor="w", pady=(0, 14))
+        font=_ui_font(11), fg=t["text"], bg=t["card_bg"],
+        wraplength=440, justify="left",
+    ).pack(anchor="w", pady=(0, 18))
 
     status_var = tk.StringVar(value="")
-    status_lbl = ttk.Label(body, textvariable=status_var, font=_ui_font(10),
-                           foreground="#666666")
-    status_lbl.pack(anchor="w", pady=(0, 8))
+    status_lbl = tk.Label(body, textvariable=status_var, font=_ui_font(10),
+                          fg=t["sub"], bg=t["card_bg"])
+    status_lbl.pack(anchor="w", pady=(0, 12))
 
-    btn_row = ttk.Frame(body)
+    btn_row = tk.Frame(body, bg=t["card_bg"])
     btn_row.pack(fill="x", pady=(4, 0))
 
-    sub_btn = ttk.Button(btn_row, text="Subscribe — $1.99 / month")
-    restore_btn = ttk.Button(btn_row, text="Restore purchases")
-    quit_btn = ttk.Button(btn_row, text="Quit")
+    sub_btn = RoundedButton(btn_row, text="Start 7-day free trial",
+                            bg=t["accent"], fg=t["accent_text"],
+                            padx=20, pady=10, font=_ui_font(11, "bold"))
+    restore_btn = RoundedButton(btn_row, text="Restore purchases",
+                                bg=t["card_bg"], fg=t["text"], padx=14, pady=10)
+    quit_btn = RoundedButton(btn_row, text="Quit",
+                             bg=t["card_bg"], fg=t["text"], padx=14, pady=10)
     sub_btn.pack(side="left")
     restore_btn.pack(side="left", padx=(8, 0))
     quit_btn.pack(side="right")
 
+    # Disable RoundedButton clicks during async Store calls by clearing
+    # _command (the canvas widget has no native disabled state); restore on idle.
+    saved_cmds: dict = {}
+
     def _busy(msg: str) -> None:
         status_var.set(msg)
         for b in (sub_btn, restore_btn, quit_btn):
-            b.configure(state="disabled")
+            if b not in saved_cmds:
+                saved_cmds[b] = b._command
+            b._command = None
         win.update_idletasks()
 
     def _idle(msg: str = "") -> None:
         status_var.set(msg)
-        for b in (sub_btn, restore_btn, quit_btn):
-            b.configure(state="normal")
+        for b in list(saved_cmds.keys()):
+            b._command = saved_cmds.pop(b)
 
     def _on_subscribe() -> None:
         _busy("Opening Microsoft Store...")
@@ -4007,7 +4055,7 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
             outcome["subscribed"] = True
             win.after(150, win.destroy)
         else:
-            _idle("Purchase did not complete. You can try again or quit.")
+            _idle("Could not start your free trial. You can try again or quit.")
 
     def _on_restore() -> None:
         _busy("Checking subscription...")
@@ -4022,9 +4070,9 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
         outcome["quit"] = True
         win.destroy()
 
-    sub_btn.configure(command=_on_subscribe)
-    restore_btn.configure(command=_on_restore)
-    quit_btn.configure(command=_on_quit)
+    sub_btn._command = _on_subscribe
+    restore_btn._command = _on_restore
+    quit_btn._command = _on_quit
 
     win.update_idletasks()
     # Center on screen.
