@@ -1,7 +1,7 @@
 {
-  "version": "1.0.24",
+  "version": "1.0.25",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Fixes the StoreHelper.exe IInitializeWithWindow handshake shipped in v1.0.23. CsWinRT-projected WinRT objects in .NET 8 are not traditional COM RCWs, so the legacy `(IInitializeWithWindow)(object)ctx` cast throws InvalidCastException. v1.0.24 uses the supported WinRT.Interop.InitializeWithWindow.Initialize(object, IntPtr) helper instead, which is the same pattern Windows App SDK / WinUI 3 desktop apps use. No other changes vs. v1.0.23.",
+  "release_notes": "Runs the StoreHelper.exe subprocess on a worker thread instead of blocking the Tk main thread. The Microsoft Store purchase overlay anchors itself to the parent window's HWND and requires the parent's message pump to be running while the overlay renders — a synchronous subprocess.run on the main thread froze the message pump, so the overlay never appeared and the call timed out. v1.0.25 spawns the helper on a daemon thread and polls a result queue via Tk's after-loop, keeping the welcome window responsive throughout. No other changes vs. v1.0.24.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

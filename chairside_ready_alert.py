@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.24"
+APP_VERSION = "1.0.25"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -4076,18 +4076,47 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
             b._command = saved_cmds.pop(b)
 
     def _on_subscribe() -> None:
+        # The Microsoft Store purchase overlay anchors itself to the parent
+        # window's HWND and requires the parent's message pump to be running
+        # while the overlay renders. We MUST NOT block the Tk main thread on
+        # the subprocess.run() call — doing so freezes the message pump and
+        # the overlay never appears, leading to a 5-minute timeout. Run the
+        # subprocess on a worker thread and poll a queue from the Tk thread.
         _busy("Opening Microsoft Store...")
         try:
             paywall_hwnd: Optional[int] = int(win.winfo_id())
         except Exception:
             paywall_hwnd = None
-        ok = request_subscription_purchase(hwnd=paywall_hwnd)
-        if ok:
-            _busy("Subscription active. Loading Chairside Ready Alert...")
-            outcome["subscribed"] = True
-            win.after(150, win.destroy)
-        else:
-            _idle("Could not start your free trial. You can try again or quit.")
+
+        result_q: queue.Queue = queue.Queue()
+
+        def _worker() -> None:
+            try:
+                ok = request_subscription_purchase(hwnd=paywall_hwnd)
+                result_q.put(("ok" if ok else "fail", None))
+            except Exception as exc:  # pragma: no cover — defensive
+                result_q.put(("error", exc))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        def _poll() -> None:
+            try:
+                kind, exc = result_q.get_nowait()
+            except queue.Empty:
+                win.after(100, _poll)
+                return
+            if kind == "ok":
+                _busy("Subscription active. Loading Chairside Ready Alert...")
+                outcome["subscribed"] = True
+                win.after(150, win.destroy)
+            else:
+                if kind == "error" and exc is not None:
+                    _append_startup_log(
+                        f"_on_subscribe worker raised: {type(exc).__name__}: {exc}"
+                    )
+                _idle("Could not start your free trial. You can try again or quit.")
+
+        win.after(100, _poll)
 
     def _on_restore() -> None:
         _busy("Checking subscription...")
