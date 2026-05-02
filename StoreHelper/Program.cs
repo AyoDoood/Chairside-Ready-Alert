@@ -28,14 +28,6 @@ namespace ChairsideReadyAlert.StoreHelper;
 
 internal static class Program
 {
-    [ComImport]
-    [Guid("3E68D4BD-7135-4D10-8018-9FB6D9F33FA1")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IInitializeWithWindow
-    {
-        void Initialize(IntPtr hwnd);
-    }
-
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
@@ -62,8 +54,15 @@ internal static class Program
         try
         {
             StoreContext ctx = StoreContext.GetDefault();
-            IInitializeWithWindow init = (IInitializeWithWindow)(object)ctx;
-            init.Initialize(hwnd);
+
+            // Modern .NET (CsWinRT) wraps WinRT classes in managed projections
+            // that are NOT traditional COM RCWs, so the legacy
+            // (IInitializeWithWindow)(object)ctx cast pattern throws
+            // InvalidCastException. WinRT.Interop.InitializeWithWindow.Initialize
+            // is the supported helper that does the COM QueryInterface to
+            // IInitializeWithWindow internally. This is the same pattern WinUI 3
+            // and Windows App SDK desktop apps use.
+            WinRT.Interop.InitializeWithWindow.Initialize(ctx, hwnd);
 
             StorePurchaseResult result = await ctx.RequestPurchaseAsync(productId);
             Console.WriteLine($"STATUS={result.Status}");
