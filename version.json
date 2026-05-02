@@ -1,7 +1,7 @@
 {
-  "version": "1.0.22",
+  "version": "1.0.23",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Same content as 1.0.21 (Microsoft Store subscription gate diagnostic logging + Modern Blue welcome screen) plus a one-line MSIX manifest fix: PublisherDisplayName now reads 'Fieldcrest Dental PC' to match the Partner Center publisher display name, which previously blocked submission upload.",
+  "release_notes": "Fixes Microsoft Store in-app subscription purchases on Win32 desktop MSIX builds. The Store SDK requires the host to call IInitializeWithWindow.Initialize(hwnd) before any UI-bearing purchase call, but IInitializeWithWindow is classic COM and the Python winrt projection cannot reach it — so direct calls from Python fail with RPC_E_WRONG_THREAD. v1.0.23 ships a tiny C# helper (StoreHelper.exe) bundled alongside the app that performs the IInitializeWithWindow handshake natively and runs the Store call. Also widens the welcome / paywall window so the title and body text no longer clip on smaller default geometries.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

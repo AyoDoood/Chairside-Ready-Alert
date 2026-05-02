@@ -42,11 +42,49 @@ jobs:
         run: |
           python -c "import platform, sys; print('arch:', platform.architecture()); print('machine:', platform.machine()); print('exe:', sys.executable)"
 
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify .NET
+        shell: pwsh
+        run: dotnet --info
+
+      - name: Resolve .NET RID
+        shell: pwsh
+        run: |
+          $rid = switch ("${{ matrix.arch }}") {
+            "x64"   { "win-x64" }
+            "x86"   { "win-x86" }
+            "arm64" { "win-arm64" }
+            default { throw "Unknown arch: ${{ matrix.arch }}" }
+          }
+          echo "DOTNET_RID=$rid" >> $env:GITHUB_ENV
+          Write-Host "Using RID: $rid"
+
+      - name: Build StoreHelper (C#)
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path $PWD "StoreHelper/publish/$env:DOTNET_RID"
+          if (Test-Path $publishDir) { Remove-Item -Recurse -Force $publishDir }
+          dotnet publish StoreHelper/StoreHelper.csproj `
+            -c Release `
+            -r $env:DOTNET_RID `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -o $publishDir
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $env:DOTNET_RID" }
+          $exe = Join-Path $publishDir "StoreHelper.exe"
+          if (-not (Test-Path $exe)) { throw "StoreHelper.exe not found at $exe" }
+          echo "STORE_HELPER_EXE=$exe" >> $env:GITHUB_ENV
+          Write-Host "StoreHelper EXE: $exe ($((Get-Item $exe).Length) bytes)"
+
       - name: Build EXE
         shell: pwsh
         working-directory: Windows Store Submission
         run: |
-          .\build_windows_exe.ps1 -PythonExe python
+          .\build_windows_exe.ps1 -PythonExe python -StoreHelperExe $env:STORE_HELPER_EXE
 
       - name: Upload EXE artifact (direct-installer path)
         uses: actions/upload-artifact@v4

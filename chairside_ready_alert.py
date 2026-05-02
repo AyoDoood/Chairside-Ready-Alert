@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.22"
+APP_VERSION = "1.0.23"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -384,44 +384,71 @@ def is_subscribed() -> bool:
     return _is_subscribed_from_cache()
 
 
-def request_subscription_purchase() -> bool:
+def _store_helper_path() -> Optional[str]:
+    """Locate StoreHelper.exe sibling to the running EXE in the PyInstaller bundle.
+    Returns None for non-frozen builds (where the helper isn't shipped) or if
+    the file is missing in a frozen install."""
+    if not getattr(sys, "frozen", False):
+        return None
+    exe_dir = os.path.dirname(sys.executable)
+    candidate = os.path.join(exe_dir, "StoreHelper.exe")
+    return candidate if os.path.exists(candidate) else None
+
+
+def request_subscription_purchase(hwnd: Optional[int] = None) -> bool:
     """Open the Microsoft Store in-app purchase overlay for the subscription
-    Add-on. Returns True on completed purchase, False otherwise."""
+    Add-on. Returns True on completed purchase or already-owned, False otherwise.
+
+    Delegates to the bundled StoreHelper.exe because the Microsoft Store SDK
+    requires the host to call IInitializeWithWindow.Initialize(hwnd) before any
+    UI-bearing Store call. IInitializeWithWindow is classic COM, not WinRT, so
+    the Python winrt projection cannot reach it; calling RequestPurchaseAsync
+    directly from Python fails with RPC_E_WRONG_THREAD ("must be called from a
+    UI thread") regardless of which thread it actually runs on.
+    """
     if not _subscription_enforced():
         return True
+
+    helper = _store_helper_path()
+    if helper is None:
+        _append_startup_log(
+            f"request_subscription_purchase: StoreHelper.exe not found beside "
+            f"sys.executable={sys.executable!r}"
+        )
+        return False
+
+    args = [helper, SUBSCRIPTION_ADDON_PRODUCT_ID]
+    if hwnd is not None and int(hwnd) != 0:
+        args.append(str(int(hwnd)))
+
     try:
-        import asyncio  # noqa: WPS433
-        from winrt.windows.services.store import StoreContext, StorePurchaseStatus  # type: ignore
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=300,  # purchase overlay can sit open while the user thinks
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        _append_startup_log(
+            "request_subscription_purchase: helper timed out after 5 minutes"
+        )
+        return False
     except Exception as exc:
         _append_startup_log(
-            f"request_subscription_purchase: winrt import failed: "
+            f"request_subscription_purchase: helper invocation failed: "
             f"{type(exc).__name__}: {exc}"
         )
         return False
-    try:
-        async def _buy() -> bool:
-            ctx = StoreContext.get_default()
-            result = await ctx.request_purchase_async(SUBSCRIPTION_ADDON_PRODUCT_ID)
-            status = getattr(result, "status", None)
-            _append_startup_log(
-                f"request_subscription_purchase: RequestPurchaseAsync "
-                f"returned status={status!r} for product_id={SUBSCRIPTION_ADDON_PRODUCT_ID!r}"
-            )
-            return status == StorePurchaseStatus.SUCCEEDED
-        loop = asyncio.new_event_loop()
-        try:
-            ok = loop.run_until_complete(_buy())
-        finally:
-            loop.close()
-        if ok:
-            _write_subscription_cache({"active": True, "last_checked": time.time()})
-        return ok
-    except Exception as exc:
-        _append_startup_log(
-            f"request_subscription_purchase: Store call failed: "
-            f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
-        )
-        return False
+
+    _append_startup_log(
+        f"request_subscription_purchase: helper exit_code={proc.returncode}, "
+        f"stdout={proc.stdout.strip()!r}, stderr={proc.stderr.strip()!r}"
+    )
+    if proc.returncode == 0:
+        _write_subscription_cache({"active": True, "last_checked": time.time()})
+        return True
+    return False
 
 
 class SingleInstanceLock:
@@ -3994,12 +4021,13 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
 
     tk.Label(body, text="Welcome to Chairside Ready Alert",
              font=_ui_font(18, "bold"),
-             fg=t["title"], bg=t["card_bg"]).pack(anchor="w")
+             fg=t["title"], bg=t["card_bg"],
+             wraplength=500, justify="left").pack(anchor="w")
     tk.Label(body,
              text="Free for 7 days. $1.99 / month after — billed and managed by Microsoft Store.",
              font=_ui_font(11),
              fg=t["sub"], bg=t["card_bg"],
-             wraplength=440, justify="left").pack(anchor="w", pady=(4, 16))
+             wraplength=500, justify="left").pack(anchor="w", pady=(4, 16))
 
     tk.Label(
         body,
@@ -4008,7 +4036,7 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
               "Store. Your alert messages stay on your local network — they "
               "never go through any cloud service."),
         font=_ui_font(11), fg=t["text"], bg=t["card_bg"],
-        wraplength=440, justify="left",
+        wraplength=500, justify="left",
     ).pack(anchor="w", pady=(0, 18))
 
     status_var = tk.StringVar(value="")
@@ -4049,7 +4077,11 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
 
     def _on_subscribe() -> None:
         _busy("Opening Microsoft Store...")
-        ok = request_subscription_purchase()
+        try:
+            paywall_hwnd: Optional[int] = int(win.winfo_id())
+        except Exception:
+            paywall_hwnd = None
+        ok = request_subscription_purchase(hwnd=paywall_hwnd)
         if ok:
             _busy("Subscription active. Loading Chairside Ready Alert...")
             outcome["subscribed"] = True
@@ -4074,13 +4106,16 @@ def _run_subscription_paywall(root: tk.Tk) -> bool:
     restore_btn._command = _on_restore
     quit_btn._command = _on_quit
 
+    # Set an explicit size — RoundedCard sizes its width reactively to its
+    # parent, so without this Tk picks a small default that clips the title
+    # and wrapped body text. Width is sized to fit the wraplength=500 labels
+    # plus outer (22) + card (24) padding on both sides. Height has slack
+    # for slightly different font metrics across systems.
+    WIN_W, WIN_H = 600, 460
     win.update_idletasks()
-    # Center on screen.
-    w = win.winfo_width()
-    h = win.winfo_height()
     sw = win.winfo_screenwidth()
     sh = win.winfo_screenheight()
-    win.geometry(f"+{(sw - w) // 2}+{(sh - h) // 3}")
+    win.geometry(f"{WIN_W}x{WIN_H}+{(sw - WIN_W) // 2}+{(sh - WIN_H) // 3}")
 
     # Force the paywall to the foreground; transient(root) is intentionally
     # NOT called because it would suppress the taskbar entry, leaving users

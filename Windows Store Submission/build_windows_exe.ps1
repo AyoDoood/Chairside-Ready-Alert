@@ -1,6 +1,7 @@
 param(
     [string]$PythonExe = "py",
-    [string[]]$PythonArgs = @()
+    [string[]]$PythonArgs = @(),
+    [string]$StoreHelperExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -68,6 +69,22 @@ Write-Info "Building Windows executable (onedir)..."
 $exePath = Join-Path $scriptDir "dist\ChairsideReadyAlert\ChairsideReadyAlert.exe"
 if (-not (Test-Path $exePath)) {
     throw "Build finished but EXE was not found at: $exePath"
+}
+
+# StoreHelper.exe is a tiny C# binary that does the IInitializeWithWindow handshake
+# the Microsoft Store SDK requires for purchase-overlay calls (see StoreHelper/Program.cs).
+# Python's winrt projection cannot reach IInitializeWithWindow because it is classic COM,
+# not WinRT — without this shim the purchase call fails with RPC_E_WRONG_THREAD.
+if ($StoreHelperExe) {
+    if (-not (Test-Path $StoreHelperExe)) {
+        throw "StoreHelperExe was specified but the file does not exist: $StoreHelperExe"
+    }
+    $distDir = Split-Path -Parent $exePath
+    $destExe = Join-Path $distDir "StoreHelper.exe"
+    Copy-Item -Path $StoreHelperExe -Destination $destExe -Force
+    Write-Info "Copied StoreHelper.exe ($((Get-Item $destExe).Length) bytes) into dist bundle: $destExe"
+} else {
+    Write-Warning "StoreHelperExe not provided — Microsoft Store purchase calls will fail in the resulting build. This is fine for non-Store builds, but a Store/MSIX submission needs the helper bundled."
 }
 
 Write-Info "Build complete."
