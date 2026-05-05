@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chairside Ready Alert — LAN messaging for dental practices</title>
+  <meta name="description" content="One-click 'ready' alerts between dental workstations on your office network. Peer-to-peer, no cloud, no accounts. $1.99 / month from the Microsoft Store, 7-day free trial.">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="canonical" href="https://ayodoood.github.io/Chairside-Ready-Alert/">
+
+  <style>
+    :root {
+      --bg: #f0f4ff;
+      --card-bg: #ffffff;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-text: #ffffff;
+      --title: #1e40af;
+      --text: #1e293b;
+      --sub: #64748b;
+      --card-border: #dde6f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    /* Hero */
+    .hero { padding: 28px 0 16px; }
+    .hero h1 {
+      font-size: 38px;
+      line-height: 1.15;
+      color: var(--title);
+      margin: 0 0 10px;
+      letter-spacing: -0.01em;
+    }
+    .hero p.tagline {
+      font-size: 19px;
+      color: var(--text);
+      margin: 0 0 22px;
+    }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin: 8px 0 4px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: background 0.15s ease;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      color: var(--accent-text);
+      text-decoration: none;
+    }
+    .btn-secondary {
+      background: var(--card-bg);
+      color: var(--title);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+    .price-line {
+      color: var(--sub);
+      font-size: 14px;
+      margin: 4px 0 0;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 26px 28px;
+      margin: 22px 0;
+    }
+    .card h2 {
+      color: var(--title);
+      font-size: 22px;
+      margin: 0 0 12px;
+    }
+    .card h3 {
+      color: var(--title);
+      font-size: 16px;
+      margin: 18px 0 6px;
+    }
+    .card p { margin: 0 0 12px; }
+    .card p:last-child { margin-bottom: 0; }
+
+    /* Feature list */
+    .features {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 24px;
+    }
+    .features li {
+      padding-left: 22px;
+      position: relative;
+      color: var(--text);
+      font-size: 15px;
+    }
+    .features li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 9px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    @media (max-width: 560px) {
+      .features { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 30px; }
+      .hero p.tagline { font-size: 17px; }
+      .container { padding: 20px 16px 40px; }
+      .card { padding: 20px 22px; }
+    }
+
+    /* Doc link list */
+    .doc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .doc-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .doc-list li:last-child { border-bottom: none; }
+    .doc-list a {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text);
+    }
+    .doc-list a span.label {
+      color: var(--title);
+      font-weight: 500;
+    }
+    .doc-list a span.arrow {
+      color: var(--sub);
+      font-size: 18px;
+    }
+    .doc-list a:hover span.label { color: var(--accent); text-decoration: none; }
+
+    /* Privacy callout */
+    .privacy {
+      border-left: 3px solid var(--accent);
+      padding-left: 16px;
+      color: var(--text);
+    }
+    .privacy strong { color: var(--title); }
+
+    /* Footer */
+    footer {
+      margin-top: 36px;
+      padding-top: 22px;
+      border-top: 1px solid var(--card-border);
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    footer p { margin: 6px 0; }
+    footer .disclaimer {
+      background: #fff8e1;
+      border: 1px solid #f1d97a;
+      color: #5a3d00;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+
+    <section class="hero">
+      <h1>Chairside Ready Alert</h1>
+      <p class="tagline">
+        One-click "ready" alerts between dental workstations on your office network.
+        Peer-to-peer, no cloud, no accounts.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://apps.microsoft.com/detail/9NKDHB58JJC5">Get on Microsoft Store</a>
+        <a class="btn btn-secondary" href="./FAQ.html">Read the FAQ</a>
+      </div>
+      <p class="price-line">Free download. 7-day free trial, then $1.99 / month — billed by Microsoft Store. Cancel anytime.</p>
+    </section>
+
+    <section class="card">
+      <h2>What it does</h2>
+      <p>
+        Chairside Ready Alert is a simple LAN messaging tool for dental practices.
+        With one click, a clinical assistant can let the doctor know
+        <em>"Room 2 is ready"</em> — the doctor's PC pings, blinks, and brings the
+        window to the foreground. No server. No cloud account. No extra hardware.
+      </p>
+      <p>
+        Every workstation runs the same app. Each one is given a station label
+        (Room 1, Room 2, Doctor, Lab, etc.). The app discovers the others on
+        your local network automatically and shows them in a one-tap send list.
+        That's it.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Features</h2>
+      <ul class="features">
+        <li>One-click "Ready" alerts between rooms</li>
+        <li>Zero-configuration peer discovery</li>
+        <li>Per-workstation station labels</li>
+        <li>15 built-in alert sounds</li>
+        <li>Per-recipient sound choice</li>
+        <li>Per-workstation volume control</li>
+        <li>Default-targets for one-tap multi-send</li>
+        <li>Three built-in visual themes</li>
+        <li>System tray quick-send</li>
+        <li>Local connection log for troubleshooting</li>
+        <li>Manual peer IP fallback</li>
+        <li>Up to 10 devices per Microsoft account</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Privacy &amp; ownership</h2>
+      <div class="privacy">
+        <p>
+          <strong>Your data stays in your office.</strong>
+          Chairside Ready Alert does not contact any cloud service, send analytics,
+          or transmit data outside your local network. Station labels and alert
+          messages travel only between devices on the same LAN.
+        </p>
+        <p>
+          The app makes no outbound internet calls during normal operation. Updates
+          are delivered through the Microsoft Store; that is the only network
+          dependency, and only while the Store update check is running.
+        </p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Pricing</h2>
+      <p>
+        Free to download from the Microsoft Store. After a 7-day free trial,
+        $1.99 USD / month covers the app on up to 10 devices linked to your
+        Microsoft account — enough for a typical dental practice from one
+        purchase. Microsoft Store handles billing, renewal, refunds, and
+        cancellation. Cancel any time in Microsoft Store settings.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Documentation</h2>
+      <ul class="doc-list">
+        <li><a href="./FAQ.html"><span class="label">FAQ &amp; Troubleshooting</span><span class="arrow">→</span></a></li>
+        <li><a href="./PRIVACY_POLICY.html"><span class="label">Privacy Policy</span><span class="arrow">→</span></a></li>
+        <li><a href="./EULA.html"><span class="label">End User License Agreement</span><span class="arrow">→</span></a></li>
+        <li><a href="./OWNERSHIP_AND_LICENSE.html"><span class="label">Ownership and License</span><span class="arrow">→</span></a></li>
+        <li><a href="./THIRD_PARTY_NOTICES.html"><span class="label">Third-Party Notices</span><span class="arrow">→</span></a></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Support</h2>
+      <p>
+        For licensing, privacy, or support inquiries:
+        <a href="mailto:support@fieldcrestdental.com">support@fieldcrestdental.com</a>
+      </p>
+      <p>
+        Source code, installers, and release history are hosted on
+        <a href="https://github.com/AyoDoood/Chairside-Ready-Alert">GitHub</a>.
+      </p>
+    </section>
+
+    <footer>
+      <div class="disclaimer">
+        <strong>Important:</strong> Chairside Ready Alert is an operational
+        convenience messaging tool only. It is <strong>not</strong> intended for
+        emergencies, life-safety alerts, patient monitoring, or clinical decision
+        support. Always maintain independent clinical and emergency
+        communication procedures.
+      </div>
+      <p>
+        © 2026 Fieldcrest Dental PC. All rights reserved. "Chairside Ready Alert"
+        and the Chairside Ready Alert logo are trademarks of Fieldcrest Dental PC.
+      </p>
+    </footer>
+
+  </main>
+</body>
+</html>
