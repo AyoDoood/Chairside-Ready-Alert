@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.28"
+APP_VERSION = "1.0.27"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -292,7 +292,7 @@ def _resolve_config_path() -> str:
 # Subscription Add-on in Partner Center, this exact string MUST be used as
 # the Add-on "Product ID" so the app can query its state.
 # ============================================================================
-SUBSCRIPTION_ADDON_PRODUCT_ID = "ChairsideReadyAlert.SubV2.Monthly"
+SUBSCRIPTION_ADDON_PRODUCT_ID = "ChairsideReadyAlert.Subscription.Monthly"
 SUBSCRIPTION_CACHE_FILE = "subscription_cache.json"
 SUBSCRIPTION_GRACE_DAYS = 7  # Cached "active" state honored this long without a successful Store ping.
 
