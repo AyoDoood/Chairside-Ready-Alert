@@ -34,8 +34,9 @@
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-    IgnorableNamespaces="uap rescap">
+    IgnorableNamespaces="uap desktop2 rescap">
 
   <Identity
     Name="FieldcrestDental.ChairsideReadyAlert"
@@ -72,6 +73,30 @@
             Square71x71Logo="Assets\Square71x71Logo.png"
             Square310x310Logo="Assets\Square310x310Logo.png" />
       </uap:VisualElements>
+      <Extensions>
+        <!--
+            Explicit firewall rules. The privateNetworkClientServer capability
+            below asks Windows to create reasonable inbound rules, but those
+            auto-created rules can land disabled-on-Private (most common cause:
+            a "Windows Defender Firewall — Allow this app?" prompt where the
+            user dismissed or unchecked Private). Declaring rules here makes
+            them deterministic — they are created enabled on every install
+            and upgrade, with the exact protocols/ports/profiles below.
+            Requires Windows 10 May 2020 update (build 19041) or later;
+            ignored on older Windows, which falls back to the capability-only
+            behavior.
+            UDP 50506 = DISCOVERY_PORT (peer beacons).
+            TCP 50505 = DEFAULT_PORT  (alert messages).
+        -->
+        <desktop2:Extension Category="windows.firewallRules">
+          <desktop2:FirewallRules Executable="ChairsideReadyAlert.exe">
+            <desktop2:Rule Direction="in"  IPProtocol="UDP" LocalPortMin="50506" LocalPortMax="50506" Profile="all"/>
+            <desktop2:Rule Direction="in"  IPProtocol="TCP" LocalPortMin="50505" LocalPortMax="50505" Profile="all"/>
+            <desktop2:Rule Direction="out" IPProtocol="UDP" LocalPortMin="50506" LocalPortMax="50506" Profile="all"/>
+            <desktop2:Rule Direction="out" IPProtocol="TCP" LocalPortMin="50505" LocalPortMax="50505" Profile="all"/>
+          </desktop2:FirewallRules>
+        </desktop2:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

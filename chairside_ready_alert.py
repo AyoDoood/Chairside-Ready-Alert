@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.29"
+APP_VERSION = "1.0.30"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -1235,6 +1235,11 @@ class ChairsideReadyAlertApp:
         self._tray_diag_lines: deque[str] = deque(maxlen=300)
         self._tray_diag_win: Optional[tk.Toplevel] = None
         self._tray_diag_text: Optional[tk.Text] = None
+        # T+25s post-start sentinel that surfaces a help dialog when no LAN
+        # peers have appeared — typically because Windows Firewall has the
+        # app's Private-profile rules disabled. See _check_lan_health.
+        self._lan_health_check_id: Optional[str] = None
+        self._lan_health_dialog: Optional[tk.Toplevel] = None
         self._last_committed_label = ""
         self._default_menu: Optional[tk.Menu] = None
         self._default_menu_vars: dict[str, tk.BooleanVar] = {}
@@ -3152,6 +3157,155 @@ class ChairsideReadyAlertApp:
         RoundedButton(buttons, text="Cancel", command=win.destroy,
                       bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, 8))
 
+    # ------------------------------------------------------------------
+    # LAN health self-check — surfaces the "Windows Firewall has disabled
+    # this app's Private-profile rules" failure mode that doesn't show up
+    # until two workstations try and fail to discover each other.
+    # ------------------------------------------------------------------
+    def _schedule_lan_health_check(self) -> None:
+        # The failure mode this catches — Windows Firewall leaving the app's
+        # Private-profile rules disabled after MSIX install — is Windows-only.
+        # macOS discovery doesn't have an equivalent silent block.
+        if sys.platform != "win32":
+            return
+        self._cancel_lan_health_check()
+        # 25s gives discovery a full beacon round-trip plus margin; healthy
+        # LANs see peers within ~5s, so an empty snapshot at 25s is signal,
+        # not noise.
+        self._lan_health_check_id = self.root.after(25000, self._check_lan_health)
+
+    def _cancel_lan_health_check(self) -> None:
+        if self._lan_health_check_id is None:
+            return
+        try:
+            self.root.after_cancel(self._lan_health_check_id)
+        except Exception:
+            pass
+        self._lan_health_check_id = None
+
+    def _check_lan_health(self) -> None:
+        self._lan_health_check_id = None
+        if not self._network_running:
+            return
+        if self.discovery and self.discovery.snapshot():
+            return
+        if self._lan_health_dialog is not None:
+            try:
+                if self._lan_health_dialog.winfo_exists():
+                    return
+            except tk.TclError:
+                pass
+            self._lan_health_dialog = None
+        self._open_lan_health_help_dialog()
+
+    def _open_lan_health_help_dialog(self) -> None:
+        t = self._current_theme
+        win = tk.Toplevel(self.root)
+        win.title(f"{APP_TITLE} — Cannot see other workstations")
+        win.geometry("600x540")
+        win.resizable(False, False)
+        win.transient(self.root)
+        win.configure(bg=t["bg"])
+        win.protocol("WM_DELETE_WINDOW", self._close_lan_health_help_dialog)
+        self._lan_health_dialog = win
+
+        frame = tk.Frame(win, bg=t["bg"], padx=14, pady=14)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text="No other workstations have responded after 25 seconds.",
+            bg=t["bg"], fg=t["text"], font=_ui_font(11, "bold"),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        tk.Label(
+            frame,
+            text=(
+                "If another computer on the same office network is running "
+                "Chairside Ready Alert, the most likely cause is Windows "
+                "Firewall blocking inbound traffic to this app on the current "
+                "network profile. To fix it, follow the three steps below on "
+                "this computer."
+            ),
+            bg=t["bg"], fg=t["sub"], font=_ui_font(10),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+
+        tk.Label(
+            frame,
+            text=(
+                "1.  Open the Start menu, type  PowerShell ,  right-click "
+                '"Windows PowerShell",  and choose  "Run as administrator".'
+            ),
+            bg=t["bg"], fg=t["text"], font=_ui_font(10),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
+        tk.Label(
+            frame,
+            text="2.  Click  Copy command  below,  then paste it into PowerShell  (right-click in the window),  and press Enter:",
+            bg=t["bg"], fg=t["text"], font=_ui_font(10),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 4))
+
+        fix_cmd = (
+            "Get-NetFirewallRule | Where-Object {\n"
+            "    ($_.DisplayName -like '*Chairside*' -or\n"
+            "     $_.DisplayName -like '*chairsidereadyalert*') -and\n"
+            "    $_.Profile -match 'Private'\n"
+            "} | Enable-NetFirewallRule"
+        )
+
+        text_box = tk.Text(
+            frame, height=6, font=_ui_font(9), wrap="none",
+            bg=t["card_bg"], fg=t["text"], relief="solid", bd=1, padx=8, pady=6,
+        )
+        text_box.insert("1.0", fix_cmd)
+        text_box.configure(state="disabled")
+        text_box.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            frame,
+            text=(
+                "3.  Close PowerShell.  This window will close on its own as "
+                "soon as another workstation appears — usually within a few "
+                "seconds.  If it doesn't, the other computer may need the "
+                "same fix, or it may not be running the app yet."
+            ),
+            bg=t["bg"], fg=t["text"], font=_ui_font(10),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 14))
+
+        def copy_command() -> None:
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(fix_cmd)
+                self.root.update()
+                self._append_diag("Firewall fix command copied to clipboard.")
+            except tk.TclError as exc:
+                self._append_diag(f"Could not copy to clipboard: {exc}")
+
+        buttons = tk.Frame(frame, bg=t["bg"])
+        buttons.pack(fill="x", pady=(4, 0))
+        RoundedButton(
+            buttons, text="Close", command=self._close_lan_health_help_dialog,
+            bg=t["card_bg"], fg=t["text"],
+        ).pack(side="right")
+        RoundedButton(
+            buttons, text="Copy command", command=copy_command,
+            bg=t["accent"], fg=t["accent_text"],
+        ).pack(side="right", padx=(0, 8))
+
+    def _close_lan_health_help_dialog(self) -> None:
+        if self._lan_health_dialog is None:
+            return
+        try:
+            self._lan_health_dialog.destroy()
+        except tk.TclError:
+            pass
+        self._lan_health_dialog = None
+
     def _on_station_label_selected(self, _event=None) -> None:
         self._commit_station_label_if_changed()
 
@@ -3431,6 +3585,7 @@ class ChairsideReadyAlertApp:
         self._append_diag(f"LAN mode: label={label}, port={port}, discovery UDP:{DISCOVERY_PORT}")
         self._schedule_sync_loop()
         self._refresh_lan_status_banner()
+        self._schedule_lan_health_check()
 
     def stop_network(self) -> None:
         self._cancel_sync_loop()
@@ -3448,6 +3603,8 @@ class ChairsideReadyAlertApp:
         self._network_running = False
         self._set_duplicate_name_warning(False)
         self._refresh_lan_status_banner()
+        self._cancel_lan_health_check()
+        self._close_lan_health_help_dialog()
         self._append_diag("Network stopped.")
 
     def _ip_for_label(self, label: str) -> Optional[str]:
@@ -3531,6 +3688,8 @@ class ChairsideReadyAlertApp:
                 if self.discovery:
                     snap = self.discovery.snapshot()
                     self._merge_online_labels(snap, time.time())
+                    if snap and self._lan_health_dialog is not None:
+                        self._close_lan_health_help_dialog()
             elif kind == "network":
                 self._handle_network_payload(payload)
             elif kind == "tray_action":
