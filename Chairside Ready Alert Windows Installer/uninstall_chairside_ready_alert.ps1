@@ -19,7 +19,14 @@ $ErrorActionPreference = "Continue"
 $installDir         = Join-Path $env:LOCALAPPDATA "ChairsideReadyAlert"
 $desktopShortcut    = Join-Path ([Environment]::GetFolderPath("Desktop")) "Chairside Ready Alert.lnk"
 $startMenuFolder    = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Chairside Ready Alert"
-$autostartBat       = Join-Path ([Environment]::GetFolderPath("Startup")) "Chairside Ready Alert.bat"
+# The in-app "Start automatically at login" menu writes
+# "Start Chairside Ready Alert.bat"; legacy installer builds wrote
+# "Chairside Ready Alert.bat". Remove both so neither gets left behind
+# pointing at the now-deleted install dir.
+$autostartBats      = @(
+    (Join-Path ([Environment]::GetFolderPath("Startup")) "Start Chairside Ready Alert.bat"),
+    (Join-Path ([Environment]::GetFolderPath("Startup")) "Chairside Ready Alert.bat")
+)
 $regKey             = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ChairsideReadyAlert"
 
 function Write-Info($msg) { Write-Host "[Uninstall] $msg" }
@@ -70,7 +77,9 @@ if (Test-Path -LiteralPath $startMenuFolder) {
 }
 
 Write-Info "Removing autostart entry..."
-Remove-Item -LiteralPath $autostartBat -Force -ErrorAction SilentlyContinue
+foreach ($bat in $autostartBats) {
+    Remove-Item -LiteralPath $bat -Force -ErrorAction SilentlyContinue
+}
 
 Write-Info "Removing Apps & Features registry entry..."
 Remove-Item -Path $regKey -Recurse -Force -ErrorAction SilentlyContinue
