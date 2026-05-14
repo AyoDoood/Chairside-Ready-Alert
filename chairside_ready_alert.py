@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.32"
+APP_VERSION = "1.0.33"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -1952,11 +1952,21 @@ class ChairsideReadyAlertApp:
     def _build_menu(self) -> None:
         menu = tk.Menu(self.root)
         settings_menu = tk.Menu(menu, tearoff=0)
-        settings_menu.add_checkbutton(
-            label="Start automatically at login",
-            variable=self._autostart_var,
-            command=self._toggle_autostart_from_menu,
-        )
+        if IS_FROZEN and sys.platform.startswith("win"):
+            # Store builds use the AppxManifest startupTask extension; the
+            # real on/off switch lives in Settings -> Apps -> Startup. A
+            # checkbutton here would lie because the AppX runtime owns the
+            # state, not our config.
+            settings_menu.add_command(
+                label="Manage startup apps (Windows Settings)…",
+                command=self._open_windows_startup_settings,
+            )
+        else:
+            settings_menu.add_checkbutton(
+                label="Start automatically at login",
+                variable=self._autostart_var,
+                command=self._toggle_autostart_from_menu,
+            )
         settings_menu.add_separator()
         settings_menu.add_command(label="Network Settings...", command=self._open_network_settings_window)
         if not IS_FROZEN:
@@ -2003,6 +2013,25 @@ class ChairsideReadyAlertApp:
     def _autostart_macos_plist_path(self) -> str:
         return os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", "com.chairside.readyalert.autostart.plist")
 
+    def _migrate_legacy_startup_bat(self) -> None:
+        # Pre-1.0.33 Store builds wrote a Startup-folder .bat whose contents
+        # hard-coded sys.executable — i.e. a WindowsApps path containing the
+        # then-current package version (e.g. ..._1.0.29.0_..._...). The Store
+        # invalidates that path on every upgrade, producing a "specified path
+        # does not exist" popup at every login. From 1.0.33 onward, autostart
+        # on Store builds is owned by the AppxManifest windows.startupTask
+        # extension; the legacy .bat is no longer needed and must be removed
+        # to clear the broken popup for users already in that state.
+        if not (IS_FROZEN and sys.platform.startswith("win")):
+            return
+        bat_path = self._autostart_windows_bat_path()
+        try:
+            if os.path.isfile(bat_path):
+                os.remove(bat_path)
+                _append_startup_log(f"Removed legacy autostart .bat at {bat_path}")
+        except Exception as exc:
+            _append_startup_log(f"Could not remove legacy autostart .bat: {exc}")
+
     def _is_autostart_enabled(self) -> bool:
         if sys.platform == "darwin":
             return os.path.isfile(self._autostart_macos_plist_path())
@@ -2011,6 +2040,14 @@ class ChairsideReadyAlertApp:
         return False
 
     def _sync_autostart_state(self) -> None:
+        # On Store builds, autostart is owned by the AppxManifest
+        # windows.startupTask extension and toggled by the user in
+        # Settings -> Apps -> Startup. We only clean up the legacy .bat
+        # from pre-1.0.33 builds; the in-app var is informational.
+        if IS_FROZEN and sys.platform.startswith("win"):
+            self._migrate_legacy_startup_bat()
+            self._autostart_var.set(True)
+            return
         # Default for fresh installs: enable autostart automatically once.
         if "autostart_enabled" not in self.config_store.data:
             ok, _msg = self._set_autostart_enabled(True)
@@ -2103,6 +2140,12 @@ class ChairsideReadyAlertApp:
             return False, "Autostart is supported only on Windows and macOS."
         except Exception as exc:
             return False, str(exc)
+
+    def _open_windows_startup_settings(self) -> None:
+        try:
+            os.startfile("ms-settings:startupapps")  # type: ignore[attr-defined]
+        except Exception as exc:
+            messagebox.showerror(APP_TITLE, f"Could not open Windows Settings:\n{exc}")
 
     def _toggle_autostart_from_menu(self) -> None:
         wanted = bool(self._autostart_var.get())

@@ -34,9 +34,10 @@
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
     xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-    IgnorableNamespaces="uap desktop2 rescap">
+    IgnorableNamespaces="uap desktop desktop2 rescap">
 
   <Identity
     Name="FieldcrestDental.ChairsideReadyAlert"
@@ -73,6 +74,24 @@
             Square71x71Logo="Assets\Square71x71Logo.png"
             Square310x310Logo="Assets\Square310x310Logo.png" />
       </uap:VisualElements>
+      <Extensions>
+        <!--
+            Run-at-login is owned by the AppX runtime, not by a Startup-folder
+            shortcut. The runtime resolves Executable= against the currently
+            installed package, so it stays valid across Store version updates
+            (the old Startup-folder .bat used pre-1.0.33 captured a versioned
+            WindowsApps path that broke on every upgrade). Users can toggle
+            this in Settings -> Apps -> Startup. Requires Windows 10 1709
+            (build 16299) or later; our MinVersion above already exceeds that.
+        -->
+        <desktop:Extension Category="windows.startupTask"
+                           Executable="ChairsideReadyAlert.exe"
+                           EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="ChairsideReadyAlertStartup"
+                               Enabled="true"
+                               DisplayName="Chairside Ready Alert" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
