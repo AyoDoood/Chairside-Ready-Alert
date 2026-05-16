@@ -1,7 +1,7 @@
 {
-  "version": "1.0.52",
+  "version": "1.0.53",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Figure now walks ON TOP of the Ready button during the random cross-canvas movement, instead of disappearing whenever it crossed the button. Previously AnimationPlayer._tick drew the button mask on top of the figure every single frame — that's what produced the peek-out effect at the start, but it also meant any walk that crossed the button area made the figure vanish mid-stride. Moved the _draw_button_mask call out of _tick and into _emerge and _hide_back, where it's the LAST thing drawn in each of those phases. Net result: the peek-out and peek-back-in effects still work exactly as before (mask draws over the figure during emerge/hide_back so the figure appears to rise/sink behind the button), but during walks and activity phases there's no mask at all — the overlay canvas is transparent everywhere except where the figure is drawn, so the real Ready button beneath the overlay shows through and the figure walks on top of it.",
+  "release_notes": "Default stick-figure character flipped from 'plain' to 'top_hat'. The character preference is stored per-machine in chairside_ready_alert_config.json, so Fieldcrest's Mac install (which had been switched to top_hat via the picker) and the new Windows install (with no character key in its config) were rendering different figures — Mac had the hat, Windows didn't. Changing the default in load_animation_character() / set_character() so any config missing the animation_character key now resolves to top_hat. Existing configs with an explicit animation_character value are not touched — users who picked a different character through the picker keep their pick.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

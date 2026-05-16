@@ -112,17 +112,20 @@ def save_animation_prefs(prefs: dict) -> None:
 
 def load_animation_character() -> str:
     """Read the user's chosen stick-figure character id. Falls back to
-    'plain' (the default character) when the key is missing or unknown."""
-    char_id = _read_full_config().get("animation_character", "plain")
+    'top_hat' (the default character) when the key is missing or unknown.
+    Default was 'plain' until 1.0.53, but Fieldcrest's preferred figure
+    is the top-hat one and configs that haven't been touched (e.g. fresh
+    Windows installs) should match what the Mac install already shows."""
+    char_id = _read_full_config().get("animation_character", "top_hat")
     if not isinstance(char_id, str) or char_id not in CHARACTERS:
-        return "plain"
+        return "top_hat"
     return char_id
 
 
 def save_animation_character(char_id: str) -> None:
     """Write the chosen character id to the shared config file."""
     if char_id not in CHARACTERS:
-        char_id = "plain"
+        char_id = "top_hat"
     data = _read_full_config()
     data["animation_character"] = char_id
     _write_full_config(data)
@@ -615,14 +618,14 @@ CHARACTERS: dict = {
 # (and the picker) sets this once before each animation starts; every call
 # to draw_figure_pose during that animation reads from here. Single-threaded
 # Tk + at-most-one-animation-at-a-time means we don't need a lock.
-_current_character_id: str = "plain"
+_current_character_id: str = "top_hat"
 
 
 def set_character(char_id: str) -> None:
     """Set the character whose decorations will be applied to subsequent
-    draw_figure_pose calls. Unknown ids fall back to 'plain'."""
+    draw_figure_pose calls. Unknown ids fall back to 'top_hat'."""
     global _current_character_id
-    _current_character_id = char_id if char_id in CHARACTERS else "plain"
+    _current_character_id = char_id if char_id in CHARACTERS else "top_hat"
 
 
 def get_character() -> str:
