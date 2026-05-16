@@ -776,8 +776,9 @@ def _walk_pose(phase: float, intensity: float = 1.0):
 # is acknowledging the user before leaving. `side`=+1 raises the right
 # hand; `side`=-1 raises the left.
 def _wave_pose(canvas, x, y, local_t, side):
-    # Hand sweeps back and forth at ~3 cycles over the gesture's duration.
-    wave_phase = local_t * 6 * math.pi
+    # Hand sweeps back and forth at ~2 cycles over the gesture's duration
+    # (was 3 in 1.0.45 — felt too fast/jittery). 2 full cycles = 4π rad.
+    wave_phase = local_t * 4 * math.pi
     wave_off = math.sin(wave_phase) * 14
     # Raised arm: upper angled 20° off vertical so it clears the head and
     # face entirely. The forearm sweeps side-to-side from that anchor.
@@ -2062,6 +2063,12 @@ class AnimationTrigger:
     MIN_COUNT = 4
     MAX_COUNT = 8
 
+    # When True, on_ready_sent() always returns True regardless of the
+    # spacing/count rules. Useful while iterating on animation choreography —
+    # the user can mash the Ready button and see something every time. Flip
+    # to False before publishing a build for actual customers.
+    TEST_MODE = True
+
     def __init__(self, rng: Optional[random.Random] = None):
         self._rng = rng or random.Random()
         self._last_qualifying_monotonic: float = -float("inf")
@@ -2074,6 +2081,8 @@ class AnimationTrigger:
     def on_ready_sent(self) -> bool:
         """Call once per outgoing Ready broadcast. Returns True if the caller
         should fire an animation now."""
+        if self.TEST_MODE:
+            return True
         now = time.monotonic()
         if now - self._last_qualifying_monotonic < self.MIN_SPACING_SEC:
             return False  # too soon since last qualifying send
@@ -2091,21 +2100,48 @@ class AnimationTrigger:
 # ---------------------------------------------------------------------------
 
 
+# Default enabled state per animation. Used when the user has NOT explicitly
+# toggled an entry via the picker (the picker writes True/False per id into
+# the config file). Animations with a False default still appear in the
+# picker — the user can opt them in by checking the box.
+#
+# Current production set per user feedback (1.0.46): Stretches, Jumping jacks,
+# Lifts weights, Little dance, Cartwheels — the five the user considers
+# polished enough to ship. Surprise / Juggling / Power nap / Yoga poses
+# default off but are kept available for future tuning.
+DEFAULT_ENABLED: dict[str, bool] = {
+    "surprise":  False,
+    "stretches": True,
+    "juggle":    False,
+    "jacks":     True,
+    "sleep":     False,
+    "weights":   True,
+    "dance":     True,
+    "cartwheel": True,
+    "yoga":      False,
+}
+
+
+def is_animation_enabled(anim_id: str, prefs: Optional[dict] = None) -> bool:
+    """True if the user has either explicitly enabled this animation in the
+    config file, or if it defaults to enabled and the user hasn't opted out.
+    Single source of truth so the picker UI and the live trigger agree."""
+    if prefs is None:
+        prefs = load_animation_prefs()
+    return bool(prefs.get(anim_id, DEFAULT_ENABLED.get(anim_id, True)))
+
+
 def pick_random_enabled_animation(
     prefs: Optional[dict] = None,
     rng: Optional[random.Random] = None,
 ) -> Optional[str]:
     """Return a random animation id from the set that the user has enabled,
-    or None if all are disabled (or no prefs file exists and the default
-    'all enabled' set is somehow empty)."""
+    or None if all are disabled."""
     if prefs is None:
         prefs = load_animation_prefs()
     if rng is None:
         rng = random
-    enabled = [
-        aid for aid in ANIMATIONS
-        if prefs.get(aid, True)   # default to enabled when key missing
-    ]
+    enabled = [aid for aid in ANIMATIONS if is_animation_enabled(aid, prefs)]
     if not enabled:
         return None
     return rng.choice(enabled)

@@ -176,7 +176,7 @@ class PickerApp:
         for anim_id, info in ra.ANIMATIONS.items():
             row = ttk.Frame(anims_frame, style="Card.TFrame")
             row.pack(fill="x", pady=2)
-            var = tk.BooleanVar(value=self._prefs.get(anim_id, True))
+            var = tk.BooleanVar(value=ra.is_animation_enabled(anim_id, self._prefs))
             self._enabled_vars[anim_id] = var
             cb = ttk.Checkbutton(
                 row, variable=var, style="Card.TCheckbutton",
