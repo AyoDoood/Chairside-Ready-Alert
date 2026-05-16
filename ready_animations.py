@@ -951,6 +951,38 @@ def _frac_jitter(button: dict, amp: float = 0.07) -> float:
     return rng.uniform(-amp, amp)
 
 
+def _rng_seq(button: dict, n: int, amp: float, stream: int = 0) -> list[float]:
+    """Return `n` stable per-play uniform values in [-amp, +amp]. Different
+    `stream` integers produce independent sequences so callers can request
+    uncorrelated x/y/etc jitters. Same seed + same stream + same n always
+    returns the same list across all frames of one play."""
+    rng = random.Random((button.get("_seed", 12345) ^ (stream * 0x9E3779B1)) & 0xFFFFFFFF)
+    return [rng.uniform(-amp, amp) for _ in range(n)]
+
+
+def _drift(button: dict, t: float, amp_x: float = 35.0, amp_y: float = 20.0) -> tuple[float, float]:
+    """Smooth pseudo-random position drift to add to a stationary figure so
+    it wanders gently around its spot instead of standing perfectly still.
+
+    `t` is the global animation time 0..1 (NOT phase-local). Returns (dx, dy)
+    offsets in pixels. The drift is the sum of two sin waves per axis at
+    randomized but slow frequencies; the seed determines the wave phases and
+    rates, so each play produces a different but smooth wander pattern that
+    stays consistent frame-to-frame within one play.
+
+    Designed to be unobtrusive — peak amplitude is ~amp_x/amp_y but the
+    typical instantaneous drift is roughly 60-70% of that."""
+    rng = random.Random((button.get("_seed", 12345) ^ 0xBADC0DE) & 0xFFFFFFFF)
+    pa, pb, pc, pd = (rng.uniform(0, 2 * math.pi) for _ in range(4))
+    fx1, fx2 = rng.uniform(0.6, 1.1), rng.uniform(0.25, 0.5)
+    fy1, fy2 = rng.uniform(0.5, 0.9), rng.uniform(0.2, 0.4)
+    dx = (math.sin(t * 2 * math.pi * fx1 + pa) * 0.55 +
+          math.sin(t * 2 * math.pi * fx2 + pb) * 0.45) * amp_x
+    dy = (math.sin(t * 2 * math.pi * fy1 + pc) * 0.55 +
+          math.sin(t * 2 * math.pi * fy2 + pd) * 0.45) * amp_y
+    return (dx, dy)
+
+
 def _pick_emerge_side(button: dict, canvas_w: int) -> int:
     """Pick which side of the button the figure peeks out from. +1=right,
     -1=left. When both sides have at least 120px of usable room, randomize
@@ -1498,11 +1530,16 @@ def draw_anim_newspaper(canvas, t, w, h, button):
 def draw_anim_stretches(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button)
-    yj = _y_jitter(button, 30)
-    spot1 = _wander_xy(button, side, w, 0.20 + fj, h * 0.65 + yj)
-    spot2 = _wander_xy(button, side, w, 0.55 + fj, h * 0.50 + yj)
-    spot3 = _wander_xy(button, side, w, 0.90 + fj, h * 0.65 + yj)
+    # Independent per-spot jitter for genuine layout variety run-to-run.
+    fjs = _rng_seq(button, 3, 0.13, stream=1)
+    yjs = _rng_seq(button, 3, 55,   stream=2)
+    spot1 = _wander_xy(button, side, w, 0.20 + fjs[0], h * 0.65 + yjs[0])
+    spot2 = _wander_xy(button, side, w, 0.55 + fjs[1], h * 0.50 + yjs[1])
+    spot3 = _wander_xy(button, side, w, 0.90 + fjs[2], h * 0.65 + yjs[2])
+    # Smooth wander overlay during stationary phases so the figure doesn't
+    # stand stock-still while stretching. Walks ignore this so the path
+    # stays clean.
+    dx, dy = _drift(button, t, 35, 18)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1513,7 +1550,7 @@ def draw_anim_stretches(canvas, t, w, h, button):
         bend = _ease_in_out(min(1.0, l * 1.5))
         body = _lerp(270, 200, bend)
         arm = _lerp(90, 130, bend)
-        draw_figure_pose(canvas, spot1[0], spot1[1],
+        draw_figure_pose(canvas, spot1[0] + dx, spot1[1] + dy,
                          body_angle=body,
                          left_arm=(arm, arm), right_arm=(arm, arm))
         return
@@ -1537,7 +1574,7 @@ def draw_anim_stretches(canvas, t, w, h, button):
         arm_a = 270 - 35 * side
         arm_b = 270 + 35 * side
         draw_figure_pose(
-            canvas, spot2[0], spot2[1] + 6,
+            canvas, spot2[0] + dx, spot2[1] + 6 + dy,
             body_angle=270 + body_lean,
             left_leg=(lead_upper, lead_lower),
             right_leg=(trail_upper, trail_lower),
@@ -1551,12 +1588,12 @@ def draw_anim_stretches(canvas, t, w, h, button):
         # Side twist: lean L/R over a 3-cycle wave
         twist_phase = l * 3 * math.pi * 2
         lean = math.sin(twist_phase) * 18
-        draw_figure_pose(canvas, spot3[0], spot3[1],
+        draw_figure_pose(canvas, spot3[0] + dx, spot3[1] + dy,
                          body_angle=270 + lean,
                          left_arm=(180, 180), right_arm=(0, 0))
         return
     if (l := _phase(t, 0.80, 0.88)) is not None:
-        _wave_pose(canvas, spot3[0], spot3[1], l, side); return
+        _wave_pose(canvas, spot3[0] + dx, spot3[1] + dy, l, side); return
     if (l := _phase(t, 0.88, 0.94)) is not None:
         _walk(canvas, spot3, edge_xy, l); return
     if (l := _phase(t, 0.94, 1.00)) is not None:
@@ -1638,10 +1675,11 @@ def draw_anim_juggle(canvas, t, w, h, button):
 def draw_anim_jacks(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button)
-    yj = _y_jitter(button, 30)
-    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.55 + yj)
-    spot2 = _wander_xy(button, side, w, 0.75 + fj, h * 0.55 + yj)
+    fjs = _rng_seq(button, 2, 0.15, stream=1)
+    yjs = _rng_seq(button, 2, 60,   stream=2)
+    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.55 + yjs[0])
+    spot2 = _wander_xy(button, side, w, 0.75 + fjs[1], h * 0.55 + yjs[1])
+    dx, dy = _drift(button, t, 30, 15)
 
     def _jack(canvas, x, y, l_in_phase, cycles):
         # Phase goes 0..1 within a single rep; we run `cycles` reps total.
@@ -1667,13 +1705,13 @@ def draw_anim_jacks(canvas, t, w, h, button):
     if (l := _phase(t, 0.05, 0.13)) is not None:
         _walk(canvas, edge_xy, spot1, l); return
     if (l := _phase(t, 0.13, 0.42)) is not None:
-        _jack(canvas, spot1[0], spot1[1], l, 4); return
+        _jack(canvas, spot1[0] + dx, spot1[1] + dy, l, 4); return
     if (l := _phase(t, 0.42, 0.50)) is not None:
         _walk(canvas, spot1, spot2, l); return
     if (l := _phase(t, 0.50, 0.82)) is not None:
-        _jack(canvas, spot2[0], spot2[1], l, 4); return
+        _jack(canvas, spot2[0] + dx, spot2[1] + dy, l, 4); return
     if (l := _phase(t, 0.82, 0.90)) is not None:
-        _wave_pose(canvas, spot2[0], spot2[1], l, side); return
+        _wave_pose(canvas, spot2[0] + dx, spot2[1] + dy, l, side); return
     if (l := _phase(t, 0.90, 0.96)) is not None:
         _walk(canvas, spot2, edge_xy, l); return
     if (l := _phase(t, 0.96, 1.00)) is not None:
@@ -1806,10 +1844,11 @@ def draw_anim_sleep(canvas, t, w, h, button):
 def draw_anim_weights(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button)
-    yj = _y_jitter(button, 30)
-    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.55 + yj)
-    spot2 = _wander_xy(button, side, w, 0.80 + fj, h * 0.55 + yj)
+    fjs = _rng_seq(button, 2, 0.15, stream=1)
+    yjs = _rng_seq(button, 2, 60,   stream=2)
+    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.55 + yjs[0])
+    spot2 = _wander_xy(button, side, w, 0.80 + fjs[1], h * 0.55 + yjs[1])
+    dx, dy = _drift(button, t, 25, 12)
 
     def _press(canvas, x, y, opened):
         body_lean = _lerp(20, 0, opened)
@@ -1846,7 +1885,7 @@ def draw_anim_weights(canvas, t, w, h, button):
     if (l := _phase(t, 0.13, 0.42)) is not None:
         rep_phase = l * 3 * math.pi
         opened = (math.sin(rep_phase) + 1.0) * 0.5
-        _press(canvas, spot1[0], spot1[1], opened); return
+        _press(canvas, spot1[0] + dx, spot1[1] + dy, opened); return
     if (l := _phase(t, 0.42, 0.52)) is not None:
         # Walk between with arms locked at shoulder level (carrying the bar
         # across the chest for the curl set at spot 2).
@@ -1873,7 +1912,7 @@ def draw_anim_weights(canvas, t, w, h, button):
         # lift type so the second location actually feels new.
         rep_phase = l * 3 * math.pi
         opened = (math.sin(rep_phase) + 1.0) * 0.5
-        x, y = spot2
+        x, y = spot2[0] + dx, spot2[1] + dy
         # Upper arm pinned down at the sides (90°). Forearm rotates from
         # extended-straight-down (90°) up to bent-toward-shoulders (270°-ish).
         # Shoulders stay level, body upright.
@@ -1902,7 +1941,7 @@ def draw_anim_weights(canvas, t, w, h, button):
         return
     if (l := _phase(t, 0.82, 0.88)) is not None:
         # Wipe brow — one hand near head
-        draw_figure_pose(canvas, spot2[0], spot2[1],
+        draw_figure_pose(canvas, spot2[0] + dx, spot2[1] + dy,
                          left_arm=(220, 280), right_arm=(80, 90))
         return
     if (l := _phase(t, 0.88, 0.94)) is not None:
@@ -1918,10 +1957,11 @@ def draw_anim_weights(canvas, t, w, h, button):
 def draw_anim_dance(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button)
-    yj = _y_jitter(button, 30)
-    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.58 + yj)
-    spot2 = _wander_xy(button, side, w, 0.80 + fj, h * 0.62 + yj)
+    fjs = _rng_seq(button, 2, 0.15, stream=1)
+    yjs = _rng_seq(button, 2, 60,   stream=2)
+    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.58 + yjs[0])
+    spot2 = _wander_xy(button, side, w, 0.80 + fjs[1], h * 0.62 + yjs[1])
+    dx, dy = _drift(button, t, 35, 15)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1936,7 +1976,7 @@ def draw_anim_dance(canvas, t, w, h, button):
         arm = math.sin(l * 6 * math.pi + 1.0) * 60
         bounce = -abs(beat) * 5
         draw_figure_pose(
-            canvas, spot1[0] + off, spot1[1] + bounce,
+            canvas, spot1[0] + off + dx, spot1[1] + bounce + dy,
             left_arm=(90 + arm, 90 + arm * 0.6),
             right_arm=(90 - arm, 90 - arm * 0.6),
             # Legs splayed: one leans down-and-to-the-right, the other
@@ -1953,14 +1993,14 @@ def draw_anim_dance(canvas, t, w, h, button):
         leg_lift = max(0, kick) * 35
         opposite = max(0, -kick) * 35
         draw_figure_pose(
-            canvas, spot2[0], spot2[1],
+            canvas, spot2[0] + dx, spot2[1] + dy,
             left_arm=(60, 60), right_arm=(120, 120),
             left_leg=(90 - leg_lift, 90 - leg_lift * 0.8),
             right_leg=(90 + opposite, 90 + opposite * 0.8),
         )
         return
     if (l := _phase(t, 0.85, 0.92)) is not None:
-        _wave_pose(canvas, spot2[0], spot2[1], l, side); return
+        _wave_pose(canvas, spot2[0] + dx, spot2[1] + dy, l, side); return
     if (l := _phase(t, 0.92, 0.97)) is not None:
         _walk(canvas, spot2, edge_xy, l); return
     if (l := _phase(t, 0.97, 1.00)) is not None:
@@ -1972,10 +2012,10 @@ def draw_anim_dance(canvas, t, w, h, button):
 def draw_anim_cartwheel(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button, 0.05)
-    yj = _y_jitter(button, 25)
-    launch = _wander_xy(button, side, w, 0.15 + fj, h * 0.55 + yj)
-    far = _wander_xy(button, side, w, 0.95 + fj, h * 0.55 + yj)
+    fjs = _rng_seq(button, 2, 0.10, stream=1)
+    yjs = _rng_seq(button, 2, 50,   stream=2)
+    launch = _wander_xy(button, side, w, 0.15 + fjs[0], h * 0.55 + yjs[0])
+    far    = _wander_xy(button, side, w, 0.95 + fjs[1], h * 0.55 + yjs[1])
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
