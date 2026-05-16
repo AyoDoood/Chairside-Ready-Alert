@@ -33,6 +33,14 @@ from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 from typing import Optional
 
+# Whimsy: stick-figure animations after qualifying outgoing Readys. Imported
+# lazily-tolerant — if the module is missing (someone deleted it from a
+# dev install), main app still launches; the trigger just no-ops.
+try:
+    import ready_animations as _ready_animations
+except Exception:  # pragma: no cover — defensive
+    _ready_animations = None  # type: ignore[assignment]
+
 if sys.platform == "win32":
     import msvcrt
 else:
@@ -113,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.40"
+APP_VERSION = "1.0.41"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -1255,6 +1263,22 @@ class ChairsideReadyAlertApp:
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
+        # Whimsy: stick-figure animation trigger. Per-session in-memory state;
+        # decides when an outgoing Ready earns the user a brief stick-figure
+        # cameo. None = feature disabled (e.g., ready_animations module missing).
+        self._anim_trigger = (
+            _ready_animations.AnimationTrigger()
+            if _ready_animations is not None
+            else None
+        )
+        self._anim_player: Optional[object] = None  # currently-playing animation
+        # Apply the user's chosen character to the renderer once on startup
+        # so subsequent triggers don't have to re-read config.
+        if _ready_animations is not None:
+            try:
+                _ready_animations.set_character(_ready_animations.load_animation_character())
+            except Exception:
+                pass
         self.server = None
         self.discovery: Optional[LanDiscovery] = None
         self.peer_clients: dict[str, MessageClient] = {}
@@ -3145,6 +3169,9 @@ class ChairsideReadyAlertApp:
             command=self.send_ready_selected,
         )
         ready_btn.pack()
+        # Stash the Ready button reference so the whimsy animations can
+        # anchor "emerge from behind this widget" positioning to it.
+        self._ready_btn_widget = ready_btn
         # Taller hit-area: 125% of natural (font + padding) height; width still from row (80% rule).
         _ready_natural_h = int(ready_btn["height"])
         ready_btn_height = max(1, int(round(_ready_natural_h * 1.25)))
@@ -4119,6 +4146,7 @@ class ChairsideReadyAlertApp:
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
         self._append_ready_log(f"[{now_str_short()}] Ready → {', '.join(targets)}")
+        self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
         if not self._network_running or not self.peer_clients:
@@ -4133,6 +4161,48 @@ class ChairsideReadyAlertApp:
             return
         client.send_chat(["ALL"], message)
         self._append_ready_log(f"[{now_str_short()}] Ready → All")
+        self._maybe_trigger_whimsy()
+
+    def _maybe_trigger_whimsy(self) -> None:
+        """Called after every outgoing Ready. Asks the trigger if this send
+        qualifies for a stick-figure animation, and if so, picks a random
+        enabled animation and plays it. Tolerant of every error path — the
+        whimsy must never disrupt the actual Ready-sending behavior."""
+        if _ready_animations is None or self._anim_trigger is None:
+            return
+        # Don't stack animations — if one is currently playing, skip.
+        existing = self._anim_player
+        if existing is not None and getattr(existing, "running", False):
+            return
+        try:
+            if not self._anim_trigger.on_ready_sent():
+                return
+        except Exception:
+            return
+        # Trigger fired — pick an enabled animation and play it.
+        try:
+            prefs = _ready_animations.load_animation_prefs()
+            anim_id = _ready_animations.pick_random_enabled_animation(prefs)
+            if anim_id is None:
+                return
+            # Apply the user's current chosen character (in case they edited
+            # it via the picker since we last loaded it on startup).
+            character = _ready_animations.load_animation_character()
+            ready_btn = getattr(self, "_ready_btn_widget", None)
+            if ready_btn is None:
+                return
+            self._anim_player = _ready_animations.play_animation(
+                anim_id,
+                self.root,
+                ready_btn,
+                character=character,
+                on_complete=self._on_whimsy_complete,
+            )
+        except Exception:
+            self._anim_player = None
+
+    def _on_whimsy_complete(self) -> None:
+        self._anim_player = None
 
     def _process_ui_queue(self) -> None:
         while True:
