@@ -545,6 +545,8 @@ Searched:
         }
     }
     foreach ($supportFile in @(
+        "ready_animations.py",
+        "ready_animation_picker.py",
         "install_chairside_ready_alert.ps1",
         "Install Chairside Ready Alert.bat",
         "Install Chairside Ready Alert macOS.command",

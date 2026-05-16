@@ -900,24 +900,91 @@ def _emerge_position(button: dict, side: int, hidden_amount: float):
 
     `side`: +1 = emerge from the button's right edge, -1 = emerge from its left.
     `hidden_amount`: 1.0 = hip at button center (figure fully behind mask),
-                     0.0 = hip well clear of the button, figure fully visible.
+                     0.0 = hip clear of the button, figure fully visible.
+
+    The X interpolation moves the hip from the button's center out to its
+    edge + 30px clearance.
+
+    The Y interpolation LIFTS the hip upward as the figure emerges. At
+    fully-hidden the hip sits at the button's vertical center (so the
+    horizontal figure fits entirely within the button mask). At fully-
+    emerged the hip rises by exactly enough that the figure's feet land
+    at the button's bottom edge — preventing the previous bug where mid-
+    emerge leg rotations caused the foot to dip below the button.
     """
     bx, by = button["x"], button["y"]
     bw = button["w"]
-    # Fully-visible offset is the button's half-width plus a little air so the
-    # figure isn't kissing the button edge.
-    clear_offset = bw / 2 + 30
-    hidden_offset = 0  # right on top of the button center
-    target_offset = _lerp(clear_offset, hidden_offset, hidden_amount)
-    return (bx + side * target_offset, by)
+    bh = button["h"]
+    clear_offset_x = bw / 2 + 30
+    target_x_offset = _lerp(clear_offset_x, 0.0, hidden_amount)
+
+    # How far the figure's feet extend below the hip when standing.
+    leg_length = LEN_UPPER_LEG + LEN_LOWER_LEG
+    # Lift the hip so feet land at button bottom when emerged. Clamped at 0
+    # for buttons taller than the leg span (won't happen in practice).
+    lift = max(0.0, leg_length - bh / 2)
+    target_y = by - _lerp(lift, 0.0, hidden_amount)
+
+    return (bx + side * target_x_offset, target_y)
+
+
+def _get_rng(button: dict) -> random.Random:
+    """Return a stable random.Random for the current play. AnimationPlayer
+    stamps a `_seed` onto the button dict at play() time, so every frame of
+    a single play sees the same sequence — but consecutive plays get
+    different sequences."""
+    return random.Random(button.get("_seed", 12345))
+
+
+def _y_jitter(button: dict, amp: float = 30.0) -> float:
+    """Stable per-play vertical offset in roughly [-amp, +amp]. Used so
+    consecutive runs of the same animation don't land in identical pixels."""
+    return _get_rng(button).uniform(-amp, amp)
+
+
+def _frac_jitter(button: dict, amp: float = 0.07) -> float:
+    """Stable per-play horizontal-fraction offset. Applied to spot fractions
+    passed into _wander_xy so consecutive runs slide left/right of their
+    canonical waypoint."""
+    # Use a separate rng "stream" so x jitter is uncorrelated with y jitter.
+    rng = random.Random(button.get("_seed", 12345) ^ 0xA5A5A5)
+    return rng.uniform(-amp, amp)
 
 
 def _pick_emerge_side(button: dict, canvas_w: int) -> int:
-    """Pick the side of the button with more room for the figure to wander to.
-    +1 for right side, -1 for left. Helps avoid figures walking off-screen on
-    narrow window widths."""
+    """Pick which side of the button the figure peeks out from. +1=right,
+    -1=left. When both sides have at least 120px of usable room, randomize
+    per-play so consecutive Ready clicks alternate sides instead of always
+    going the same way. When one side is cramped (button near a window edge)
+    fall back to picking the side with more space."""
     bx = button["x"]
-    return +1 if bx < canvas_w / 2 else -1
+    bw = button["w"]
+    space_right = canvas_w - (bx + bw / 2)
+    space_left = bx - bw / 2
+    if space_right >= 120 and space_left >= 120:
+        return _get_rng(button).choice([+1, -1])
+    return +1 if space_right >= space_left else -1
+
+
+def _wander_xy(button: dict, side: int, canvas_w: int, fraction: float,
+               y: float) -> tuple[float, float]:
+    """Compute a target spot for the figure to wander to, anchored to the
+    available distance between the button edge and the canvas edge instead
+    of using fixed pixel offsets.
+
+    `fraction` is 0..1 along the available horizontal travel:
+        0.0  ~= just past the button edge
+        1.0  ~= near the canvas edge (with a 60px limb-extension margin)
+    Clamped to [0, 1] so callers adding per-play jitter can't overshoot.
+    """
+    fraction = max(0.0, min(1.0, fraction))
+    edge_x = button["x"] + side * (button["w"] / 2 + 30)
+    if side > 0:
+        avail = max(40.0, canvas_w - edge_x - 60.0)
+    else:
+        avail = max(40.0, edge_x - 60.0)
+    target_x = edge_x + side * avail * fraction
+    return (target_x, y)
 
 
 # ---------------------------------------------------------------------------
@@ -1038,12 +1105,17 @@ class AnimationPlayer:
             text_color — label color
             label      — text rendered on the button (default 'Ready')
             radius     — corner radius (default 10)
+
+        A `_seed` value is added to the button dict so animations can derive
+        per-play randomness (side, y offset, spot jitter) that stays stable
+        across all frames of this play but varies across consecutive plays.
         """
         if anim_id not in ANIMATIONS:
             return
         self.stop()  # cancel any in-flight animation
         self._anim_id = anim_id
         self._button = dict(button)
+        self._button["_seed"] = random.randint(0, 10**9)
         self._start_time = time.monotonic()
         self._running = True
         self._tick()
@@ -1277,7 +1349,9 @@ def _hide_back(canvas, button, local_t, side):
 def draw_anim_surprise(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot = (edge_xy[0] + side * 110, button["y"] + 5)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 20)
+    spot = _wander_xy(button, side, w, 0.30 + fj, button["y"] + 5 + yj)
 
     if (l := _phase(t, 0.00, 0.10)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1314,7 +1388,9 @@ def draw_anim_surprise(canvas, t, w, h, button):
 def draw_anim_newspaper(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    chair_spot = (edge_xy[0] + side * 170, h * 0.62)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 25)
+    chair_spot = _wander_xy(button, side, w, 0.55 + fj, h * 0.62 + yj)
 
     def _draw_chair(cx, cy):
         # Simple side-view chair: seat (horizontal line), back (vertical
@@ -1422,9 +1498,11 @@ def draw_anim_newspaper(canvas, t, w, h, button):
 def draw_anim_stretches(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot1 = (edge_xy[0] + side * 70,  h * 0.65)
-    spot2 = (edge_xy[0] + side * 180, h * 0.50)
-    spot3 = (edge_xy[0] + side * 290, h * 0.65)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 30)
+    spot1 = _wander_xy(button, side, w, 0.20 + fj, h * 0.65 + yj)
+    spot2 = _wander_xy(button, side, w, 0.55 + fj, h * 0.50 + yj)
+    spot3 = _wander_xy(button, side, w, 0.90 + fj, h * 0.65 + yj)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1491,7 +1569,9 @@ def draw_anim_stretches(canvas, t, w, h, button):
 def draw_anim_juggle(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot = (edge_xy[0] + side * 150, h * 0.58)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 25)
+    spot = _wander_xy(button, side, w, 0.45 + fj, h * 0.58 + yj)
 
     BALL_R = 6
     HAND_OFFSET_X = 14  # how far apart the hands are when juggling
@@ -1558,8 +1638,10 @@ def draw_anim_juggle(canvas, t, w, h, button):
 def draw_anim_jacks(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot1 = (edge_xy[0] + side * 100, h * 0.55)
-    spot2 = (edge_xy[0] + side * 230, h * 0.55)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 30)
+    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.55 + yj)
+    spot2 = _wander_xy(button, side, w, 0.75 + fj, h * 0.55 + yj)
 
     def _jack(canvas, x, y, l_in_phase, cycles):
         # Phase goes 0..1 within a single rep; we run `cycles` reps total.
@@ -1606,7 +1688,9 @@ def draw_anim_jacks(canvas, t, w, h, button):
 def draw_anim_sleep(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    bed = (edge_xy[0] + side * 200, h * 0.70)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 15)
+    bed = _wander_xy(button, side, w, 0.60 + fj, h * 0.70 + yj)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1722,8 +1806,10 @@ def draw_anim_sleep(canvas, t, w, h, button):
 def draw_anim_weights(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot1 = (edge_xy[0] + side * 110, h * 0.55)
-    spot2 = (edge_xy[0] + side * 240, h * 0.55)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 30)
+    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.55 + yj)
+    spot2 = _wander_xy(button, side, w, 0.80 + fj, h * 0.55 + yj)
 
     def _press(canvas, x, y, opened):
         body_lean = _lerp(20, 0, opened)
@@ -1832,8 +1918,10 @@ def draw_anim_weights(canvas, t, w, h, button):
 def draw_anim_dance(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot1 = (edge_xy[0] + side * 100, h * 0.58)
-    spot2 = (edge_xy[0] + side * 230, h * 0.62)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 30)
+    spot1 = _wander_xy(button, side, w, 0.30 + fj, h * 0.58 + yj)
+    spot2 = _wander_xy(button, side, w, 0.80 + fj, h * 0.62 + yj)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1884,8 +1972,10 @@ def draw_anim_dance(canvas, t, w, h, button):
 def draw_anim_cartwheel(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    launch = (edge_xy[0] + side * 50, h * 0.55)
-    far = (edge_xy[0] + side * (w * 0.36), h * 0.55)
+    fj = _frac_jitter(button, 0.05)
+    yj = _y_jitter(button, 25)
+    launch = _wander_xy(button, side, w, 0.15 + fj, h * 0.55 + yj)
+    far = _wander_xy(button, side, w, 0.95 + fj, h * 0.55 + yj)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -1961,9 +2051,11 @@ def draw_anim_cartwheel(canvas, t, w, h, button):
 def draw_anim_yoga(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    spot1 = (edge_xy[0] + side * 100, h * 0.55)
-    spot2 = (edge_xy[0] + side * 220, h * 0.55)
-    spot3 = (edge_xy[0] + side * 340, h * 0.55)
+    fj = _frac_jitter(button)
+    yj = _y_jitter(button, 30)
+    spot1 = _wander_xy(button, side, w, 0.25 + fj, h * 0.55 + yj)
+    spot2 = _wander_xy(button, side, w, 0.55 + fj, h * 0.55 + yj)
+    spot3 = _wander_xy(button, side, w, 0.90 + fj, h * 0.55 + yj)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
