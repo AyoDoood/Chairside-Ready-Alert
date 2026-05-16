@@ -960,6 +960,62 @@ def _rng_seq(button: dict, n: int, amp: float, stream: int = 0) -> list[float]:
     return [rng.uniform(-amp, amp) for _ in range(n)]
 
 
+def _random_spots(button: dict, w: int, h: int, n: int, side: int, *,
+                  same_y: bool = False) -> list[tuple[float, float]]:
+    """Pick `n` random spots distributed across the WHOLE canvas (corners
+    + mid-edges), in a different random order each play (via the button's
+    _seed). The figure traverses them in the returned order, so each play
+    produces a different cross-canvas sequence — top-right, bottom-left,
+    top-left, etc.
+
+    Spots are sampled without replacement from a fixed candidate set
+    spread around the canvas perimeter; per-spot jitter (±30px x, ±25px y)
+    means even repeated region picks aren't pixel-identical.
+
+    With `same_y=True` all spots share one randomly-chosen Y band. Used
+    for cartwheel where the motion is inherently horizontal.
+
+    Walks between distant spots may cross behind the Ready button; the
+    button mask briefly hides the figure in transit, which reads as the
+    figure ducking behind the button rather than as a glitch.
+    """
+    rng = random.Random((button.get("_seed", 12345) ^ 0xC0FFEE) & 0xFFFFFFFF)
+
+    # Candidate regions cover the four corners, top/bottom centers, and
+    # the two horizontal mid-points. Y values are chosen so that the
+    # button (typically at center-X, ~0.40h) doesn't sit inside any
+    # region's natural area.
+    regions = [
+        (0.12, 0.15),  # top-left
+        (0.50, 0.10),  # top-center
+        (0.88, 0.15),  # top-right
+        (0.10, 0.55),  # left-mid (below button-Y)
+        (0.90, 0.55),  # right-mid (below button-Y)
+        (0.15, 0.82),  # bottom-left
+        (0.50, 0.85),  # bottom-center
+        (0.85, 0.82),  # bottom-right
+    ]
+    chosen = rng.sample(regions, min(n, len(regions)))
+
+    if same_y:
+        y_level = rng.choice([0.18, 0.55, 0.82]) * h
+        spots = []
+        for xf, _yf in chosen:
+            jx = rng.uniform(-30, 30)
+            sx = max(60.0, min(w - 60.0, xf * w + jx))
+            spots.append((sx, y_level))
+        return spots
+
+    spots = []
+    for xf, yf in chosen:
+        jx = rng.uniform(-30, 30)
+        jy = rng.uniform(-25, 25)
+        sx = max(60.0, min(w - 60.0, xf * w + jx))
+        sy = max(60.0, min(h - 60.0, yf * h + jy))
+        spots.append((sx, sy))
+    return spots
+
+
 def _drift(button: dict, t: float, amp_x: float = 35.0, amp_y: float = 20.0) -> tuple[float, float]:
     """Smooth pseudo-random position drift to add to a stationary figure so
     it wanders gently around its spot instead of standing perfectly still.
@@ -1530,12 +1586,7 @@ def draw_anim_newspaper(canvas, t, w, h, button):
 def draw_anim_stretches(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    # Independent per-spot jitter for genuine layout variety run-to-run.
-    fjs = _rng_seq(button, 3, 0.13, stream=1)
-    yjs = _rng_seq(button, 3, 55,   stream=2)
-    spot1 = _wander_xy(button, side, w, 0.20 + fjs[0], h * 0.65 + yjs[0])
-    spot2 = _wander_xy(button, side, w, 0.55 + fjs[1], h * 0.50 + yjs[1])
-    spot3 = _wander_xy(button, side, w, 0.90 + fjs[2], h * 0.65 + yjs[2])
+    spot1, spot2, spot3 = _random_spots(button, w, h, 3, side)
     # Smooth wander overlay during stationary phases so the figure doesn't
     # stand stock-still while stretching. Walks ignore this so the path
     # stays clean.
@@ -1675,10 +1726,7 @@ def draw_anim_juggle(canvas, t, w, h, button):
 def draw_anim_jacks(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fjs = _rng_seq(button, 2, 0.15, stream=1)
-    yjs = _rng_seq(button, 2, 60,   stream=2)
-    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.55 + yjs[0])
-    spot2 = _wander_xy(button, side, w, 0.75 + fjs[1], h * 0.55 + yjs[1])
+    spot1, spot2 = _random_spots(button, w, h, 2, side)
     dx, dy = _drift(button, t, 30, 15)
 
     def _jack(canvas, x, y, l_in_phase, cycles):
@@ -1844,10 +1892,7 @@ def draw_anim_sleep(canvas, t, w, h, button):
 def draw_anim_weights(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fjs = _rng_seq(button, 2, 0.15, stream=1)
-    yjs = _rng_seq(button, 2, 60,   stream=2)
-    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.55 + yjs[0])
-    spot2 = _wander_xy(button, side, w, 0.80 + fjs[1], h * 0.55 + yjs[1])
+    spot1, spot2 = _random_spots(button, w, h, 2, side)
     dx, dy = _drift(button, t, 25, 12)
 
     def _press(canvas, x, y, opened):
@@ -1957,10 +2002,7 @@ def draw_anim_weights(canvas, t, w, h, button):
 def draw_anim_dance(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fjs = _rng_seq(button, 2, 0.15, stream=1)
-    yjs = _rng_seq(button, 2, 60,   stream=2)
-    spot1 = _wander_xy(button, side, w, 0.30 + fjs[0], h * 0.58 + yjs[0])
-    spot2 = _wander_xy(button, side, w, 0.80 + fjs[1], h * 0.62 + yjs[1])
+    spot1, spot2 = _random_spots(button, w, h, 2, side)
     dx, dy = _drift(button, t, 35, 15)
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
@@ -2012,10 +2054,12 @@ def draw_anim_dance(canvas, t, w, h, button):
 def draw_anim_cartwheel(canvas, t, w, h, button):
     side = _pick_emerge_side(button, w)
     edge_xy = _emerge_position(button, side, 0.0)
-    fjs = _rng_seq(button, 2, 0.10, stream=1)
-    yjs = _rng_seq(button, 2, 50,   stream=2)
-    launch = _wander_xy(button, side, w, 0.15 + fjs[0], h * 0.55 + yjs[0])
-    far    = _wander_xy(button, side, w, 0.95 + fjs[1], h * 0.55 + yjs[1])
+    launch, far = _random_spots(button, w, h, 2, side, same_y=True)
+    # Cartwheel rotation direction follows the actual outbound motion
+    # (launch → far) rather than the emerge side, otherwise the figure
+    # can end up rolling backwards if _random_spots places `far` on the
+    # opposite side of the canvas from `launch`.
+    cart_dir = +1 if far[0] > launch[0] else -1
 
     if (l := _phase(t, 0.00, 0.05)) is not None:
         _emerge(canvas, button, l, side); return
@@ -2024,7 +2068,7 @@ def draw_anim_cartwheel(canvas, t, w, h, button):
     if (l := _phase(t, 0.10, 0.45)) is not None:
         eased = l   # near-linear cartwheel pace
         x = _lerp(launch[0], far[0], eased)
-        rot = l * 4 * math.pi * side
+        rot = l * 4 * math.pi * cart_dir
         body_angle = (270 + math.degrees(rot)) % 360
         # Arms extend PERPENDICULAR to the body axis (one each side, T-pose
         # style) rather than along it — this keeps them away from the head's
@@ -2058,7 +2102,7 @@ def draw_anim_cartwheel(canvas, t, w, h, button):
         return
     if (l := _phase(t, 0.55, 0.90)) is not None:
         x = _lerp(far[0], launch[0], l)
-        rot = l * 4 * math.pi * (-side)
+        rot = l * 4 * math.pi * (-cart_dir)
         body_angle = (270 + math.degrees(rot)) % 360
         # Same pose family as the outbound cartwheel — arms perpendicular
         # to body, legs splayed in a V at the feet end.
