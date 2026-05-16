@@ -113,7 +113,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.35"
+APP_VERSION = "1.0.36"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -360,18 +360,26 @@ THEMES: dict[str, dict] = {
         "title": "#1e40af", "text": "#1e293b", "sub": "#64748b", "card_border": "#dde6f5",
         "log_bg": "#f8faff", "log_text": "#475569", "status": "#16a34a",
         "input_bg": "#f8fafc", "input_border": "#cbd5e1", "slider_track": "#dde6f5",
+        # emph_dark: drives the bold/larger color of the most recent incoming
+        # Ready in the log (and the second-most-recent one too). Darker than
+        # 'title' so the message reads as a step beyond the usual brand color.
+        "emph_dark": "#1e3a8a",
     },
     "Sage Clinic": {
         "bg": "#f2f5ee", "card_bg": "#ffffff", "accent": "#4a7c59", "accent_text": "#ffffff",
         "title": "#2d5a3d", "text": "#2c3e2d", "sub": "#6b8f6c", "card_border": "#d4e4d5",
         "log_bg": "#f7faf7", "log_text": "#5a7a5b", "status": "#2d8a4e",
         "input_bg": "#f7faf7", "input_border": "#c8dfc9", "slider_track": "#c8dfc9",
+        "emph_dark": "#1b3a26",
     },
     "Rose Quartz": {
         "bg": "#fdf2f4", "card_bg": "#ffffff", "accent": "#e11d48", "accent_text": "#ffffff",
         "title": "#be123c", "text": "#3d0a18", "sub": "#9c5a6c", "card_border": "#fbc9d4",
         "log_bg": "#fff5f7", "log_text": "#9c5a6c", "status": "#059669",
         "input_bg": "#fff5f7", "input_border": "#fbc9d4", "slider_track": "#fbc9d4",
+        # Rose Quartz: title is a bright crimson, not actually dark. Use the
+        # near-black 'text' color so the emphasized line still reads as "dark".
+        "emph_dark": "#3d0a18",
     },
 }
 DEFAULT_THEME = "Modern Blue"
@@ -2923,6 +2931,25 @@ class ChairsideReadyAlertApp:
             self._log_panel.update_theme(
                 theme["log_bg"], theme["log_text"], theme.get("card_border"), theme["card_bg"]
             )
+        # Configure the two emphasis tiers for incoming Ready messages.
+        # 'recent1' = newest incoming Ready (large, bold, theme's darkest color).
+        # 'recent2' = second-most-recent (smaller bump, same dark color).
+        # Both tags are re-configured on every theme change so the colors track
+        # the active theme. Bumping the animation sequence aborts any in-flight
+        # pop animation that captured the old color.
+        if hasattr(self, "log"):
+            emph_dark = theme.get("emph_dark", title_c)
+            self.log.tag_configure(
+                "recent1",
+                font=_ttk_font(15, "bold"),
+                foreground=emph_dark,
+            )
+            self.log.tag_configure(
+                "recent2",
+                font=_ttk_font(12, "bold"),
+                foreground=emph_dark,
+            )
+            self._recent1_anim_seq = getattr(self, "_recent1_anim_seq", 0) + 1
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=theme["status"], bg=card, font=_ui_font(9, "bold"))
         if hasattr(self, "duplicate_name_label"):
@@ -3485,6 +3512,93 @@ class ChairsideReadyAlertApp:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _append_incoming_ready_log(self, text: str) -> None:
+        """Append an INCOMING Ready with visual emphasis on the newest line.
+        The previous newest line is demoted to a secondary emphasis tier.
+        The new line plays a brief 'pop' size animation (8pt → 17pt peak →
+        15pt settled, ~320ms) to draw the eye. Outgoing Ready messages go
+        through _append_ready_log instead — they don't get emphasis."""
+        self.log.configure(state="normal")
+        try:
+            # Demote the existing recent1 → recent2, and clear the prior recent2.
+            marks = self.log.mark_names()
+            if "recent2_start" in marks and "recent2_end" in marks:
+                try:
+                    self.log.tag_remove(
+                        "recent2",
+                        self.log.index("recent2_start"),
+                        self.log.index("recent2_end"),
+                    )
+                except tk.TclError:
+                    pass
+                self.log.mark_unset("recent2_start")
+                self.log.mark_unset("recent2_end")
+            if "recent1_start" in marks and "recent1_end" in marks:
+                try:
+                    r1s = self.log.index("recent1_start")
+                    r1e = self.log.index("recent1_end")
+                    self.log.tag_remove("recent1", r1s, r1e)
+                    self.log.tag_add("recent2", r1s, r1e)
+                    self.log.mark_set("recent2_start", r1s)
+                    self.log.mark_gravity("recent2_start", "left")
+                    self.log.mark_set("recent2_end", r1e)
+                    self.log.mark_gravity("recent2_end", "right")
+                except tk.TclError:
+                    pass
+                self.log.mark_unset("recent1_start")
+                self.log.mark_unset("recent1_end")
+
+            # Insert the new line and tag the just-inserted range as recent1.
+            # An anchor mark with 'left' gravity stays at the start of the
+            # inserted text — Tk inserts to the right of left-gravity marks.
+            self.log.mark_set("_insert_anchor", "end - 1c")
+            self.log.mark_gravity("_insert_anchor", "left")
+            self.log.insert("end", text.rstrip() + "\n")
+            line_start = self.log.index("_insert_anchor")
+            line_end = self.log.index("end - 1c")
+            self.log.mark_unset("_insert_anchor")
+            self.log.tag_add("recent1", line_start, line_end)
+            self.log.mark_set("recent1_start", line_start)
+            self.log.mark_gravity("recent1_start", "left")
+            self.log.mark_set("recent1_end", line_end)
+            self.log.mark_gravity("recent1_end", "right")
+
+            self.log.see("end")
+        finally:
+            self.log.configure(state="disabled")
+
+        # Fire the pop animation on the recent1 tag's font.
+        self._animate_recent1_pop()
+
+    def _animate_recent1_pop(self) -> None:
+        """Pop the 'recent1' tag font from a small starting size up through a
+        peak and settle to the final size, over ~320ms. Reuses a sequence
+        counter to abort superseded animations (e.g., when a newer Ready
+        arrives mid-pop, or when the theme is swapped mid-pop)."""
+        self._recent1_anim_seq = getattr(self, "_recent1_anim_seq", 0) + 1
+        seq = self._recent1_anim_seq
+
+        theme = getattr(self, "_current_theme", THEMES[DEFAULT_THEME])
+        fg = theme.get("emph_dark", theme["title"])
+
+        # (delay_ms_from_now, font_size_pt) frames. Starts small, scales up to
+        # a peak slightly above the settled size, then eases back. Roughly
+        # equivalent to a CSS scale(0.6) → scale(1.12) → scale(1) keyframe.
+        frames = [(0, 8), (80, 14), (160, 17), (240, 16), (320, 15)]
+        for delay_ms, size in frames:
+            def _frame(s=size, k=seq) -> None:
+                if k != self._recent1_anim_seq:
+                    return  # superseded
+                try:
+                    self.log.tag_configure(
+                        "recent1",
+                        font=_ttk_font(s, "bold"),
+                        foreground=fg,
+                    )
+                except tk.TclError:
+                    pass
+            self.root.after(delay_ms, _frame)
+
     def _open_connection_log_window(self) -> None:
         if self._diag_win is not None and self._diag_win.winfo_exists():
             self._diag_win.lift()
@@ -3780,7 +3894,7 @@ class ChairsideReadyAlertApp:
                 if body.lower() != "ready":
                     self._append_diag(f"Chat from {sender} (not logged in main window): {body!r}")
                     return
-                self._append_ready_log(f"[{ts}] {sender}: Ready")
+                self._append_incoming_ready_log(f"[{ts}] {sender}: Ready")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
                 self._focus_and_alert_main_window(alert_sound=alert_sound, alert_volume=int(self.alert_volume_var.get()))
 
