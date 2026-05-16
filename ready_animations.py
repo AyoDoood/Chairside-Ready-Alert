@@ -1231,15 +1231,16 @@ class AnimationPlayer:
             canvas.delete("all")
             w = canvas.winfo_width()
             h = canvas.winfo_height()
-            # 1. Animation draws the figure at its current pose/position.
+            # Animation draws the figure. The button-mask used to be drawn
+            # here unconditionally to clip the figure where it overlapped
+            # the Ready button, but that meant the figure was hidden any
+            # time it walked over the button. Now _emerge and _hide_back
+            # draw their own mask AFTER the figure (producing the peek
+            # effect at the start and end), and all other phases skip it
+            # entirely — so during the random cross-canvas movement the
+            # figure walks ON TOP of the real Ready button beneath the
+            # transparent overlay.
             anim["draw_fn"](canvas, t, w, h, self._button)
-            # 2. Player draws the button-mask on top so any figure parts that
-            #    overlap the button get visually clipped. This is what
-            #    produces the "peek out from behind the button" effect during
-            #    the emerge phase and the matching "peek back in" effect at
-            #    the end. When the figure is far from the button, the mask
-            #    just looks like the button itself.
-            _draw_button_mask(canvas, self._button)
         except tk.TclError:
             self.stop()
             return
@@ -1405,6 +1406,11 @@ def _emerge(canvas, button, local_t, side):
         left_arm=(arm, arm), right_arm=(arm, arm),
         left_leg=(leg, leg), right_leg=(leg, leg),
     )
+    # Mask is drawn ONLY during emerge/hide_back so the peek effect works.
+    # During the rest of the animation (walks and activity phases) the mask
+    # is omitted, leaving the figure visible on top of the real Ready
+    # button beneath the transparent overlay.
+    _draw_button_mask(canvas, button)
 
 
 def _hide_back(canvas, button, local_t, side):
@@ -1429,6 +1435,9 @@ def _hide_back(canvas, button, local_t, side):
         left_arm=(arm, arm), right_arm=(arm, arm),
         left_leg=(leg, leg), right_leg=(leg, leg),
     )
+    # See note above _emerge — mask is drawn here so the figure visibly
+    # slides back behind the button at the end of the animation.
+    _draw_button_mask(canvas, button)
 
 
 # ---- Animation 1: Surprise — single spot, 5s ----
