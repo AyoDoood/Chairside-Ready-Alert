@@ -168,11 +168,55 @@ def _circle(canvas: tk.Canvas, cx, cy, r, *, stroke=STROKE, color=COLOR, fill=""
 
 
 # ---------------------------------------------------------------------------
-# Character decorations — drawn on top of the bare stick figure to give it
-# a bit of personality. Each function takes the head position, head radius,
-# body angle (so decorations rotate correctly during cartwheels etc.), and
-# the same scale/stroke/color as the base figure. The function paints
-# whatever sits on top of the head, on its face, or hanging from the neck.
+# Face: every character gets eyes + a smile drawn on the head, oriented so
+# the face sits on the side of the head opposite the neck (i.e., "forward").
+# When the figure rotates during a cartwheel or lies down to sleep, the face
+# rotates with the body. Drawn by draw_figure_pose just before the per-
+# character decoration so things like glasses overlay the eye dots correctly.
+# ---------------------------------------------------------------------------
+
+
+def _draw_face(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Two eye dots and a smile arc on the head."""
+    # Eye positions: slightly toward the top of the head (along body_angle)
+    # and symmetrical on either side of the body axis.
+    up_x, up_y = _project(0, 0, head_r * 0.18, body_angle)
+    eye_center_x = head_x + up_x
+    eye_center_y = head_y + up_y
+    eye_offset = head_r * 0.36
+    eye_r = max(1.4, head_r * 0.13 * scale)
+    for side in (+1, -1):
+        ex, ey = _project(
+            eye_center_x, eye_center_y, eye_offset, body_angle + 90 * side,
+        )
+        canvas.create_oval(
+            ex - eye_r, ey - eye_r, ex + eye_r, ey + eye_r,
+            outline=color, fill=color, width=0,
+        )
+    # Smile: a smooth three-point arc curving toward the chin (i.e., toward
+    # the body, opposite body_angle). Tk's create_arc is screen-axis aligned
+    # which wouldn't rotate with the figure, so we approximate the curve
+    # with create_line(smooth=True) through three control points.
+    down_x, down_y = _project(0, 0, head_r * 0.28, (body_angle + 180) % 360)
+    mouth_cx = head_x + down_x
+    mouth_cy = head_y + down_y
+    smile_half_w = head_r * 0.34
+    smile_depth = head_r * 0.18
+    left = _project(mouth_cx, mouth_cy, smile_half_w, body_angle + 90)
+    right = _project(mouth_cx, mouth_cy, smile_half_w, body_angle - 90)
+    bot = _project(mouth_cx, mouth_cy, smile_depth, (body_angle + 180) % 360)
+    canvas.create_line(
+        left[0], left[1], bot[0], bot[1], right[0], right[1],
+        fill=color, width=max(1, stroke - 1),
+        smooth=True, capstyle="round",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Character decorations — drawn on top of the bare stick figure (and on top
+# of the face) to give it personality. Each function takes the head position,
+# head radius, body angle (so decorations rotate correctly during cartwheels
+# etc.), and the same scale/stroke/color as the base figure.
 # ---------------------------------------------------------------------------
 
 
@@ -317,16 +361,253 @@ def _decor_bow_tie(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke,
     )
 
 
+def _decor_sunglasses(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Solid sunglasses: filled circular lenses + a bridge across the nose."""
+    up_x, up_y = _project(0, 0, head_r * 0.18, body_angle)
+    eye_center_x = head_x + up_x
+    eye_center_y = head_y + up_y
+    eye_offset = head_r * 0.40
+    lens_r = head_r * 0.32
+    for side in (+1, -1):
+        cx, cy = _project(eye_center_x, eye_center_y, eye_offset, body_angle + 90 * side)
+        canvas.create_oval(
+            cx - lens_r, cy - lens_r, cx + lens_r, cy + lens_r,
+            outline=color, fill=color, width=1,
+        )
+    # Bridge between the lenses (perpendicular to body axis)
+    bridge_y = head_r * 0.05
+    lb = _project(eye_center_x, eye_center_y, eye_offset - lens_r, body_angle + 90)
+    rb = _project(eye_center_x, eye_center_y, eye_offset - lens_r, body_angle - 90)
+    canvas.create_line(lb[0], lb[1], rb[0], rb[1],
+                       fill=color, width=stroke, capstyle="round")
+
+
+def _decor_pigtails(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Two pigtail bunches on either side of the head, each made of four
+    short strokes fanning outward and slightly downward."""
+    for side in (+1, -1):
+        anchor = _project(head_x, head_y, head_r * 0.95, body_angle + 90 * side)
+        for j in range(4):
+            offset_deg = (j - 1.5) * 10
+            # Pigtails fall slightly toward the body (away from body_angle).
+            tip = _project(
+                anchor[0], anchor[1], head_r * 1.4,
+                body_angle + 90 * side + 18 * side + offset_deg,
+            )
+            canvas.create_line(
+                anchor[0], anchor[1], tip[0], tip[1],
+                fill=color, width=stroke, capstyle="round",
+            )
+
+
+def _decor_curly(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Tight curls along the top of the head — five small unfilled circles."""
+    curl_r = head_r * 0.20
+    for angle_off in (-55, -28, 0, 28, 55):
+        cx, cy = _project(head_x, head_y, head_r * 1.05, body_angle + angle_off)
+        canvas.create_oval(
+            cx - curl_r, cy - curl_r, cx + curl_r, cy + curl_r,
+            outline=color, width=max(1, stroke - 1), fill="",
+        )
+
+
+def _decor_baseball_cap(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Baseball cap: domed crown over the top of the head plus a brim
+    sticking out to one side (the 'forward' direction of the face)."""
+    # Dome: a smooth polyline approximation of the upper half-circle of the
+    # head. Drawing as a smoothed line means it rotates cleanly.
+    n_pts = 10
+    points = []
+    for i in range(n_pts + 1):
+        t = i / n_pts
+        angle = body_angle + (t - 0.5) * 170
+        pos = _project(head_x, head_y, head_r * 1.08, angle)
+        points.append(pos)
+    flat = [c for p in points for c in p]
+    canvas.create_line(*flat, fill=color, width=stroke, smooth=True, capstyle="round")
+    # Brim: small triangular wedge pointing to one side ("front of head")
+    brim_dir = body_angle + 80
+    brim_anchor = _project(head_x, head_y, head_r * 0.95, brim_dir)
+    t1 = _project(brim_anchor[0], brim_anchor[1], head_r * 0.9, brim_dir)
+    t2 = _project(brim_anchor[0], brim_anchor[1], head_r * 0.4, brim_dir - 20)
+    canvas.create_line(brim_anchor[0], brim_anchor[1], t1[0], t1[1],
+                       fill=color, width=stroke, capstyle="round")
+    canvas.create_line(t1[0], t1[1], t2[0], t2[1],
+                       fill=color, width=stroke, capstyle="round")
+
+
+def _decor_wizard_hat(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Tall pointy wizard hat with a small star on the side."""
+    # Brim line perpendicular to body axis
+    brim_pos = _project(head_x, head_y, head_r * 0.85, body_angle)
+    brim_half = head_r * 1.3
+    bl = _project(brim_pos[0], brim_pos[1], brim_half, body_angle + 90)
+    br = _project(brim_pos[0], brim_pos[1], brim_half, body_angle - 90)
+    canvas.create_line(bl[0], bl[1], br[0], br[1],
+                       fill=color, width=stroke, capstyle="round")
+    # Triangle from the brim to the tip
+    tri_half = head_r * 0.75
+    base_l = _project(brim_pos[0], brim_pos[1], tri_half, body_angle + 90)
+    base_r = _project(brim_pos[0], brim_pos[1], tri_half, body_angle - 90)
+    tip = _project(brim_pos[0], brim_pos[1], head_r * 2.4, body_angle)
+    canvas.create_polygon(
+        base_l[0], base_l[1], tip[0], tip[1], base_r[0], base_r[1],
+        outline=color, width=stroke, fill="",
+    )
+    # Star (4-point cross) near the tip
+    star_center = _project(tip[0], tip[1], head_r * 0.5, (body_angle + 180) % 360)
+    star_r = head_r * 0.18
+    sw = max(1, stroke - 1)
+    s1 = _project(star_center[0], star_center[1], star_r, body_angle)
+    s2 = _project(star_center[0], star_center[1], star_r, (body_angle + 180) % 360)
+    s3 = _project(star_center[0], star_center[1], star_r, body_angle + 90)
+    s4 = _project(star_center[0], star_center[1], star_r, body_angle - 90)
+    canvas.create_line(s1[0], s1[1], s2[0], s2[1], fill=color, width=sw, capstyle="round")
+    canvas.create_line(s3[0], s3[1], s4[0], s4[1], fill=color, width=sw, capstyle="round")
+
+
+def _decor_cowboy_hat(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Cowboy hat: wide brim that curls up at the sides + short rounded crown."""
+    # Wide brim with subtle curl-up at the edges
+    brim_pos = _project(head_x, head_y, head_r * 0.85, body_angle)
+    brim_half = head_r * 1.5
+    n = 9
+    points = []
+    for i in range(n + 1):
+        t = i / n
+        side_amount = (t - 0.5) * 2 * brim_half
+        pos = _project(brim_pos[0], brim_pos[1], side_amount, body_angle + 90)
+        # Edges curl UP (toward body_angle direction), middle stays flat
+        curl = max(0.0, abs(t - 0.5) - 0.30) * head_r * 0.8
+        up_off = _project(0, 0, curl, body_angle)
+        points.append((pos[0] + up_off[0], pos[1] + up_off[1]))
+    flat = [c for p in points for c in p]
+    canvas.create_line(*flat, fill=color, width=stroke, smooth=True, capstyle="round")
+    # Crown: rounded dome
+    crown_half = head_r * 0.75
+    crown_top_offset = head_r * 0.7
+    cl = _project(brim_pos[0], brim_pos[1], crown_half, body_angle + 90)
+    cr = _project(brim_pos[0], brim_pos[1], crown_half, body_angle - 90)
+    crown_top = _project(brim_pos[0], brim_pos[1], crown_top_offset, body_angle)
+    ctl = _project(crown_top[0], crown_top[1], crown_half * 0.65, body_angle + 90)
+    ctr = _project(crown_top[0], crown_top[1], crown_half * 0.65, body_angle - 90)
+    canvas.create_line(
+        cl[0], cl[1], ctl[0], ctl[1], ctr[0], ctr[1], cr[0], cr[1],
+        fill=color, width=stroke, smooth=True, capstyle="round",
+    )
+
+
+def _decor_mustache(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Handlebar mustache between the eyes and the smile."""
+    # Position: just above the smile, below the eye line
+    pos_x, pos_y = _project(head_x, head_y, head_r * 0.06, (body_angle + 180) % 360)
+    half_w = head_r * 0.42
+    # Two curls — one on each side, each a smooth 3-point line ending with
+    # a small upward flick away from the body.
+    for side in (+1, -1):
+        outer = _project(pos_x, pos_y, half_w, body_angle + 90 * side)
+        # Flick up (toward body_angle) at the end
+        flick = _project(outer[0], outer[1], head_r * 0.18, body_angle)
+        canvas.create_line(
+            pos_x, pos_y, outer[0], outer[1], flick[0], flick[1],
+            fill=color, width=stroke, smooth=True, capstyle="round",
+        )
+
+
+def _decor_crown(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Royal crown: zigzag of three peaks across the top of the head."""
+    base_pos = _project(head_x, head_y, head_r * 0.7, body_angle)
+    base_half = head_r * 1.0
+    peak_h = head_r * 0.7
+    n_peaks = 3
+    # 2*n_peaks + 1 points: alternating bottom-of-valley and top-of-peak
+    points = []
+    for i in range(2 * n_peaks + 1):
+        t = i / (2 * n_peaks)
+        side_amount = (t - 0.5) * 2 * base_half
+        pt = _project(base_pos[0], base_pos[1], side_amount, body_angle + 90)
+        if i % 2 == 0:
+            points.append(pt)  # at the base
+        else:
+            tip = _project(pt[0], pt[1], peak_h, body_angle)
+            points.append(tip)
+    flat = [c for p in points for c in p]
+    canvas.create_line(*flat, fill=color, width=stroke, capstyle="round")
+    # Small jewel (filled circle) on the middle peak
+    middle_peak = points[n_peaks]  # the middle peak index
+    jewel_r = head_r * 0.10
+    canvas.create_oval(
+        middle_peak[0] - jewel_r, middle_peak[1] - jewel_r,
+        middle_peak[0] + jewel_r, middle_peak[1] + jewel_r,
+        outline=color, fill=color, width=0,
+    )
+
+
+def _decor_bunny_ears(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Two long curved bunny ears extending up from the head."""
+    for side in (-1, +1):
+        # Ear anchor: on top of the head, slightly to the side
+        anchor = _project(head_x, head_y, head_r * 0.7, body_angle + 18 * side)
+        outer_mid = _project(anchor[0], anchor[1], head_r * 1.0, body_angle + 22 * side)
+        outer_tip = _project(outer_mid[0], outer_mid[1], head_r * 1.0, body_angle + 6 * side)
+        # Inner side comes from a slightly different head anchor and meets the same tip
+        inner_anchor = _project(head_x, head_y, head_r * 0.85, body_angle + 5 * side)
+        inner_mid = _project(inner_anchor[0], inner_anchor[1], head_r * 0.9, body_angle)
+        # Draw outer + tip + back along inner side as one smooth polyline
+        canvas.create_line(
+            anchor[0], anchor[1],
+            outer_mid[0], outer_mid[1],
+            outer_tip[0], outer_tip[1],
+            inner_mid[0], inner_mid[1],
+            inner_anchor[0], inner_anchor[1],
+            fill=color, width=stroke, smooth=True, capstyle="round",
+        )
+
+
+def _decor_headphones(canvas, head_x, head_y, head_r, body_angle, *, scale, stroke, color):
+    """Headphones: a band across the top of the head and two ear cups on
+    either side."""
+    # Band: smooth arc over the top of the head
+    n = 7
+    points = []
+    for i in range(n + 1):
+        t = i / n
+        angle = body_angle + (t - 0.5) * 130
+        pos = _project(head_x, head_y, head_r * 1.05, angle)
+        points.append(pos)
+    flat = [c for p in points for c in p]
+    canvas.create_line(*flat, fill=color, width=stroke, smooth=True, capstyle="round")
+    # Ear cups on either side of the head, perpendicular to body axis
+    cup_r = head_r * 0.32
+    for side in (-1, +1):
+        cup_pos = _project(head_x, head_y, head_r * 0.92, body_angle + 90 * side)
+        canvas.create_oval(
+            cup_pos[0] - cup_r, cup_pos[1] - cup_r,
+            cup_pos[0] + cup_r, cup_pos[1] + cup_r,
+            outline=color, width=stroke, fill="",
+        )
+
+
 # Registry of characters. The key is the stable id used in the config file.
 # Renaming a key is a breaking change for the user's saved preference.
 CHARACTERS: dict = {
-    "plain":     {"name": "Plain (no extras)",   "draw_extra": _decor_plain},
-    "wavy_hair": {"name": "Wavy hair",            "draw_extra": _decor_wavy_hair},
-    "top_hat":   {"name": "Top hat",              "draw_extra": _decor_top_hat},
-    "mohawk":    {"name": "Mohawk",               "draw_extra": _decor_mohawk},
-    "glasses":   {"name": "Glasses",              "draw_extra": _decor_glasses},
-    "beard":     {"name": "Long beard",           "draw_extra": _decor_beard},
-    "bow_tie":   {"name": "Bow tie",              "draw_extra": _decor_bow_tie},
+    "plain":         {"name": "Plain (no extras)", "draw_extra": _decor_plain},
+    "wavy_hair":     {"name": "Wavy hair",          "draw_extra": _decor_wavy_hair},
+    "curly":         {"name": "Curly hair",         "draw_extra": _decor_curly},
+    "pigtails":      {"name": "Pigtails",           "draw_extra": _decor_pigtails},
+    "mohawk":        {"name": "Mohawk",             "draw_extra": _decor_mohawk},
+    "bunny_ears":    {"name": "Bunny ears",         "draw_extra": _decor_bunny_ears},
+    "top_hat":       {"name": "Top hat",            "draw_extra": _decor_top_hat},
+    "baseball_cap":  {"name": "Baseball cap",       "draw_extra": _decor_baseball_cap},
+    "cowboy_hat":    {"name": "Cowboy hat",         "draw_extra": _decor_cowboy_hat},
+    "wizard_hat":    {"name": "Wizard hat",         "draw_extra": _decor_wizard_hat},
+    "crown":         {"name": "Crown",              "draw_extra": _decor_crown},
+    "headphones":    {"name": "Headphones",         "draw_extra": _decor_headphones},
+    "glasses":       {"name": "Glasses",            "draw_extra": _decor_glasses},
+    "sunglasses":    {"name": "Sunglasses",         "draw_extra": _decor_sunglasses},
+    "mustache":      {"name": "Mustache",           "draw_extra": _decor_mustache},
+    "beard":         {"name": "Long beard",         "draw_extra": _decor_beard},
+    "bow_tie":       {"name": "Bow tie",            "draw_extra": _decor_bow_tie},
 }
 
 
@@ -398,9 +679,17 @@ def draw_figure_pose(
         _segment(canvas, hip_x, hip_y, knee_x, knee_y, stroke=stroke, color=color)
         _segment(canvas, knee_x, knee_y, foot_x, foot_y, stroke=stroke, color=color)
 
-    # Apply the active character's decoration on top of the basic figure
-    # (hair, hat, glasses, beard, etc.). The decoration uses body_angle so
-    # it rotates correctly when the figure cartwheels or lies down.
+    # Face first: every character gets eyes + a smile on the head. The face
+    # rotates with body_angle so cartwheels look right.
+    try:
+        _draw_face(canvas, head_x, head_y, hr, body_angle,
+                   scale=scale, stroke=stroke, color=color)
+    except Exception:
+        pass
+
+    # Apply the active character's decoration on top (hair, hat, glasses,
+    # beard, etc.). Decoration draws AFTER the face so that things like
+    # glasses correctly cover the eye dots underneath.
     decorator = CHARACTERS.get(_current_character_id, CHARACTERS["plain"])["draw_extra"]
     try:
         decorator(canvas, head_x, head_y, hr, body_angle,

@@ -61,12 +61,16 @@ class MockReadyButton(tk.Canvas):
             parent, width=width, height=height,
             bg=THEME["card_bg"], highlightthickness=0, bd=0,
         )
-        self._w, self._h = width, height
+        # Don't use self._w / self._h here — tk.Canvas (via tk.Misc) uses
+        # self._w internally as the Tcl widget path. Overwriting it makes
+        # every subsequent create_* call fail with
+        # "_tkinter.TclError: invalid command name '<width>'".
+        self._btn_w, self._btn_h = width, height
         self._draw()
 
     def _draw(self):
         r = 8
-        w, h = self._w, self._h
+        w, h = self._btn_w, self._btn_h
         pts = [
             r, 0,   w - r, 0,   w, 0,   w, r,
             w, h - r, w, h,   w - r, h, r, h,
