@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.55"
+APP_VERSION = "1.0.56"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -1265,11 +1265,13 @@ class ChairsideReadyAlertApp:
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
-        # Whimsy: stick-figure animation trigger. Per-session in-memory state;
-        # decides when an outgoing Ready earns the user a brief stick-figure
-        # cameo. None = feature disabled (e.g., ready_animations module missing).
+        # Whimsy: stick-figure animation trigger. State (count, target,
+        # last-qualifying timestamp) persists across app restarts and
+        # computer shutdown via the shared config file — closing the app to
+        # bypass the 10-minute spacing rule won't work.
+        # None = feature disabled (e.g., ready_animations module missing).
         self._anim_trigger = (
-            _ready_animations.AnimationTrigger()
+            _ready_animations.AnimationTrigger(load_from_storage=True)
             if _ready_animations is not None
             else None
         )

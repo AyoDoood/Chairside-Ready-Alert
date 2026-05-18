@@ -131,6 +131,21 @@ def save_animation_character(char_id: str) -> None:
     _write_full_config(data)
 
 
+def load_animation_trigger_state() -> dict:
+    """Read AnimationTrigger persisted state. Returns {} when missing —
+    callers treat that as a cold start."""
+    state = _read_full_config().get("anim_trigger_state", {})
+    return state if isinstance(state, dict) else {}
+
+
+def save_animation_trigger_state(state: dict) -> None:
+    """Atomically write AnimationTrigger state to the shared config file,
+    preserving all other top-level keys."""
+    data = _read_full_config()
+    data["anim_trigger_state"] = state
+    _write_full_config(data)
+
+
 # ---------------------------------------------------------------------------
 # Stick figure drawing primitives.
 # All angles in WORLD-SPACE degrees: 0=right, 90=down, 180=left, 270=up.
@@ -2237,8 +2252,14 @@ class AnimationTrigger:
     randomly chosen target in [MIN_COUNT, MAX_COUNT], an animation fires
     and the counter resets with a fresh random target.
 
-    State is in-memory only. App restart starts the counter fresh — which is
-    fine for a cosmetic feature and prevents persistence-based gaming."""
+    When constructed with load_from_storage=True (the main app does this),
+    the count, target, and last-qualifying timestamp survive app restarts
+    and computer shutdown via the shared config file. Wall-clock time is
+    used for the spacing check so the 10-minute floor still applies after
+    the user closes and reopens the app — otherwise quitting after a
+    qualifying send would reset the spacing rule and defeat the anti-spam
+    intent. Defaults to in-memory-only when load_from_storage is False so
+    unit tests stay deterministic."""
 
     MIN_SPACING_SEC = 10 * 60
     MIN_COUNT = 4
@@ -2250,30 +2271,64 @@ class AnimationTrigger:
     # to False before publishing a build for actual customers.
     TEST_MODE = False
 
-    def __init__(self, rng: Optional[random.Random] = None):
+    def __init__(
+        self,
+        rng: Optional[random.Random] = None,
+        *,
+        load_from_storage: bool = False,
+    ):
         self._rng = rng or random.Random()
-        self._last_qualifying_monotonic: float = -float("inf")
+        self._persist = load_from_storage
+        self._last_qualifying_epoch: float = -float("inf")
         self._qualifying_count: int = 0
         self._target: int = self._pick_target()
+        if load_from_storage:
+            self._load()
 
     def _pick_target(self) -> int:
         return self._rng.randint(self.MIN_COUNT, self.MAX_COUNT)
+
+    def _load(self) -> None:
+        state = load_animation_trigger_state()
+        target = state.get("target")
+        if isinstance(target, int) and self.MIN_COUNT <= target <= self.MAX_COUNT:
+            self._target = target
+        count = state.get("count")
+        if isinstance(count, int) and 0 <= count < self._target:
+            self._qualifying_count = count
+        last = state.get("last_qualifying_epoch")
+        if isinstance(last, (int, float)):
+            self._last_qualifying_epoch = float(last)
+
+    def _save(self) -> None:
+        if not self._persist:
+            return
+        try:
+            save_animation_trigger_state({
+                "count": self._qualifying_count,
+                "target": self._target,
+                "last_qualifying_epoch": self._last_qualifying_epoch,
+            })
+        except OSError:
+            pass  # cosmetic feature — disk errors must not surface
 
     def on_ready_sent(self) -> bool:
         """Call once per outgoing Ready broadcast. Returns True if the caller
         should fire an animation now."""
         if self.TEST_MODE:
             return True
-        now = time.monotonic()
-        if now - self._last_qualifying_monotonic < self.MIN_SPACING_SEC:
+        now = time.time()
+        if now - self._last_qualifying_epoch < self.MIN_SPACING_SEC:
             return False  # too soon since last qualifying send
-        self._last_qualifying_monotonic = now
+        self._last_qualifying_epoch = now
         self._qualifying_count += 1
+        fired = False
         if self._qualifying_count >= self._target:
             self._qualifying_count = 0
             self._target = self._pick_target()
-            return True
-        return False
+            fired = True
+        self._save()
+        return fired
 
 
 # ---------------------------------------------------------------------------
