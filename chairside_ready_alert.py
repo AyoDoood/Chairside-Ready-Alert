@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.56"
+APP_VERSION = "1.0.57"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -815,6 +815,7 @@ class MessageServer:
         buffer = ""
         client_sock.settimeout(1.0)
         self.ui_queue.put(("status", f"Peer connected from {addr[0]}"))
+        rejected_duplicate = False
         while self.running:
             try:
                 data = client_sock.recv(BUFFER_SIZE)
@@ -839,12 +840,19 @@ class MessageServer:
                     proposed = payload.get("label", "Unknown")
                     with self.lock:
                         existing = self.clients.get(proposed)
-                        if existing is not None and existing is not client_sock:
-                            self.client_sockets.discard(existing)
-                            try:
-                                existing.close()
-                            except Exception:
-                                pass
+                    if existing is not None and existing is not client_sock:
+                        # Another peer already owns this label. The old code
+                        # kicked the existing socket and admitted the new one
+                        # — on a LAN where multiple machines still held the
+                        # default "Room 1" label, that became an unbounded
+                        # connect/kick/reconnect storm that pegged the main
+                        # thread. Keep the existing socket; refuse this one.
+                        # Hold the rejected socket briefly so older peers
+                        # without client-side backoff can't retry-flood us.
+                        rejected_duplicate = True
+                        time.sleep(3)
+                        break
+                    with self.lock:
                         label = proposed
                         self.clients[label] = client_sock
                     self._broadcast_presence()
@@ -853,6 +861,8 @@ class MessageServer:
                     self._relay_chat(payload)
                 elif msg_type == "ping":
                     self._send_json(client_sock, {"type": "pong", "ts": time.time()})
+            if rejected_duplicate:
+                break
 
         with self.lock:
             if label and label in self.clients and self.clients[label] is client_sock:
@@ -862,9 +872,12 @@ class MessageServer:
             client_sock.close()
         except Exception:
             pass
-        self._broadcast_presence()
-        if label:
-            self.ui_queue.put(("status", f"Disconnected: {label}"))
+        if rejected_duplicate:
+            self.ui_queue.put(("status", f"Rejected duplicate-label hello from {addr[0]} (label already in use)"))
+        else:
+            self._broadcast_presence()
+            if label:
+                self.ui_queue.put(("status", f"Disconnected: {label}"))
 
     def _relay_chat(self, payload: dict) -> None:
         targets = payload.get("to", [])
@@ -979,6 +992,13 @@ class MessageClient:
                 self._listen_loop(sock)
             except Exception:
                 self.ui_queue.put(("status", f"Disconnected from {self.host}:{self.port}. Retrying…"))
+            # Always back off before reconnecting. Without this, a server that
+            # closes us cleanly (e.g. another peer with the same label took
+            # over) is reconnected to instantly — on a LAN where multiple
+            # machines still hold the default "Room 1" label, that turned
+            # into a connect/kick/reconnect storm that pegged the server's
+            # main thread.
+            if self.running:
                 time.sleep(3)
 
     def _listen_loop(self, sock: socket.socket) -> None:
@@ -1683,46 +1703,12 @@ class ChairsideReadyAlertApp:
             self._mac_status_target = target
             self._record_tray_diag("Native status item configured (visible + menu attached).")
             self._record_tray_diag("Native status item attached to system status bar.")
-            # Force the menu bar to render the new item immediately, then keep it
-            # alive with periodic pumping.  Tkinter's mainloop drives NSApp events
-            # but doesn't automatically drain NSRunLoop sources that AppKit uses to
-            # paint status items.
-            try:
-                from Foundation import NSRunLoop, NSDate  # type: ignore
-                import objc  # type: ignore
-                with objc.autorelease_pool():
-                    NSRunLoop.mainRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.05))
-            except Exception:
-                pass
-            self.root.after(200, self._pump_macos_runloop)
             return True
         except Exception as exc:
             self._append_diag(f"Native macOS menu bar icon failed: {exc}")
             self._record_tray_diag(f"Native macOS menu bar icon failed: {exc}")
             _append_startup_log(f"native macOS menu bar icon failed: {exc}")
             return False
-
-    def _pump_macos_runloop(self) -> None:
-        """Drive the AppKit run loop so the menu-bar status item stays rendered.
-
-        Tkinter's mainloop processes NSApp events but doesn't guarantee the
-        NSRunLoop sources that repaint status items are drained.  Running the
-        loop for 0 s is non-blocking and safe to call on every Tk tick.
-        """
-        if sys.platform != "darwin" or self._quitting or self._mac_status_item is None:
-            return
-        try:
-            from Foundation import NSRunLoop, NSDate  # type: ignore
-            import objc  # type: ignore
-            # Drain the autoreleased NSDate (and any objects autoreleased by
-            # runUntilDate_) each tick. Without this, Tk-driven apps leak VM
-            # until macOS refuses further allocation and the process aborts.
-            with objc.autorelease_pool():
-                NSRunLoop.mainRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.0))
-        except Exception:
-            pass
-        if not self._quitting and self._mac_status_item is not None:
-            self.root.after(200, self._pump_macos_runloop)
 
     def _stop_tray_icon(self) -> None:
         if sys.platform == "darwin" and self._mac_status_item is not None:
