@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.57"
+APP_VERSION = "1.0.58"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -328,6 +328,15 @@ class SingleInstanceLock:
         self._fh = None
 
 
+# Displayed in the Station name combobox on a fresh install (and any time the
+# saved label is unset). NOT a real station name -- never persisted to config,
+# never broadcast in beacons. The networking layer treats it the same as "" via
+# ChairsideReadyAlertApp._has_real_station_label, and the Ready button is
+# disabled until the user picks a real name. This fixes the long-standing
+# fresh-install collision where every new computer joined the LAN broadcasting
+# "Room 1" and stomped the existing Room 1 station.
+STATION_NAME_PROMPT = "Please choose the name of this Station"
+
 DEFAULT_LABELS = ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5", "Doctor", "Lab"]
 DEFAULT_STATION_SOUNDS = {
     "Room 1": "Bright Chime",
@@ -503,7 +512,7 @@ class ConfigStore:
     def __init__(self, path: str) -> None:
         self.path = path
         self.data = {
-            "label": "Room 1",
+            "label": "",
             "server_host": "",
             "server_port": DEFAULT_PORT,
             "is_server": False,
@@ -594,7 +603,13 @@ class LanDiscovery:
         self._removed_labels: list[str] = []
 
     def update_label(self, label: str) -> None:
-        self.label = label.strip() or "Room 1"
+        # Caller (ChairsideReadyAlertApp.start_network) refuses to start the
+        # network until a real station name is picked, so an empty string here
+        # should be unreachable. Kept as "" rather than the old "Room 1"
+        # fallback so a regression can't silently revive the fresh-install
+        # collision bug -- an empty beacon label is visibly wrong; "Room 1" is
+        # invisibly wrong.
+        self.label = label.strip()
 
     def update_tcp_port(self, port: int) -> None:
         self.tcp_port = port
@@ -3027,8 +3042,9 @@ class ChairsideReadyAlertApp:
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=theme["status"], bg=card, font=_ui_font(9, "bold"))
         if hasattr(self, "duplicate_name_label"):
-            warn_color = "#b45309" if self._duplicate_name_detected else theme["sub"]
-            self.duplicate_name_label.configure(fg=warn_color, bg=card, font=_ui_font(8))
+            # Color + text are decided by _refresh_station_name_warning so the
+            # red station-unset prompt isn't overwritten by a theme switch.
+            self._refresh_station_name_warning()
         if hasattr(self, "_ready_wrap"):
             self._ready_wrap.configure(bg=card)
         if hasattr(self, "_ready_center"):
@@ -3042,6 +3058,11 @@ class ChairsideReadyAlertApp:
             c.update_colors(card, bg, cborder)
         for btn in self._buttons:
             btn.update_colors(accent, atext, card)
+        # The Ready button is in self._buttons so the loop above just repainted
+        # it accent-colored. If it should be disabled (no station picked yet),
+        # repaint it muted again now.
+        if hasattr(self, "_ready_btn_widget"):
+            self._set_ready_button_enabled(getattr(self, "_ready_button_enabled", True))
         # Update sound_row and targets_frame direct-color tk frames
         if hasattr(self, "sound_combo"):
             self.sound_combo.master.configure(bg=card)
@@ -3056,7 +3077,7 @@ class ChairsideReadyAlertApp:
 
     def _build_ui(self) -> None:
         # Initialise all tk variables first — some widgets reference them before their section is built
-        self.label_var = tk.StringVar(value="Room 1")
+        self.label_var = tk.StringVar(value=STATION_NAME_PROMPT)
         self.port_var = tk.StringVar(value=str(DEFAULT_PORT))
         self.alert_sound_var = tk.StringVar(value=ALERT_SOUND_OPTIONS[0])
         self.alert_volume_var = tk.IntVar(value=70)
@@ -3093,9 +3114,13 @@ class ChairsideReadyAlertApp:
         # Readonly: free-text typing was redundant with the new "Add or Remove
         # Computers..." dialog and led to drift between local typed names and the
         # network-shared list. Users now pick from the dropdown only.
+        # width=38 fits the STATION_NAME_PROMPT placeholder shown on a fresh
+        # install ("Please choose the name of this Station"). Real station
+        # names are short ("Room 1", "Doctor", "Lab"); the extra width just
+        # leaves whitespace once a name is picked, which is fine.
         self.label_combo = ttk.Combobox(left, textvariable=self.label_var,
                                          values=list(self._effective_station_labels()),
-                                         width=22, state="readonly")
+                                         width=38, state="readonly")
         self.label_combo.pack(fill="x")
         self.label_combo.bind("<<ComboboxSelected>>", self._on_station_label_selected)
         self.duplicate_name_var = tk.StringVar(value="")
@@ -3229,15 +3254,24 @@ class ChairsideReadyAlertApp:
 
     def _load_config_into_form(self) -> None:
         data = self.config_store.data
-        label = data.get("label", "Room 1")
-        self.label_var.set(label)
+        raw_label = str(data.get("label", "") or "").strip()
+        # Fresh-install or otherwise-empty config: show the placeholder prompt
+        # in the dropdown instead of silently defaulting to "Room 1". Treat a
+        # config that somehow contains the prompt string (downgrade, corrupted
+        # save) as unset too.
+        if not raw_label or raw_label == STATION_NAME_PROMPT:
+            self.label_var.set(STATION_NAME_PROMPT)
+            committed_label = ""
+        else:
+            self.label_var.set(raw_label)
+            committed_label = raw_label
         self.port_var.set(str(data.get("server_port", DEFAULT_PORT)))
         theme_name = data.get("theme", DEFAULT_THEME)
         if theme_name not in THEMES:
             self.config_store.data["theme"] = DEFAULT_THEME
             self.config_store.save()
         saved_sound = str(data.get("alert_sound", "") or "").strip()
-        default_sound = DEFAULT_STATION_SOUNDS.get(label, ALERT_SOUND_OPTIONS[0])
+        default_sound = DEFAULT_STATION_SOUNDS.get(committed_label, ALERT_SOUND_OPTIONS[0])
         if saved_sound and saved_sound in ALERT_SOUND_OPTIONS:
             self.alert_sound_var.set(saved_sound)
         else:
@@ -3245,14 +3279,22 @@ class ChairsideReadyAlertApp:
         self.alert_volume_var.set(int(data.get("alert_volume", 70)))
         self.label_combo["values"] = list(self._effective_station_labels())
         self._target_signature = None
-        self._last_committed_label = self.label_var.get().strip()
+        self._last_committed_label = committed_label
         self._refresh_target_checkboxes(list(self.online_labels))
         self._apply_default_target_selection(force=True)
         self._apply_theme(data.get("theme", DEFAULT_THEME))
+        # _apply_theme repaints the Ready button accent; re-apply the disabled
+        # state afterwards so a fresh install lands with Ready visibly off.
+        self._refresh_station_name_warning()
+        self._set_ready_button_enabled(self._has_real_station_label())
 
     def _write_form_to_data(self) -> None:
         """Copy current UI values into config_store.data (does not write to disk)."""
-        self.config_store.data["label"] = self.label_var.get().strip()
+        raw_label = self.label_var.get().strip()
+        # The placeholder is a UI affordance, not a real station name -- never
+        # let _persist_form (called on alert-volume changes, theme changes, etc.)
+        # bake it into the saved config.
+        self.config_store.data["label"] = "" if raw_label == STATION_NAME_PROMPT else raw_label
         try:
             self.config_store.data["server_port"] = int(self.port_var.get().strip() or DEFAULT_PORT)
         except ValueError:
@@ -3268,6 +3310,13 @@ class ChairsideReadyAlertApp:
         if self.auto_start_done:
             return
         self.auto_start_done = True
+        if not self._has_real_station_label():
+            # Fresh install: the user hasn't picked a station name yet. Don't
+            # start the LAN beacon -- a blank or placeholder beacon would race
+            # with the existing real stations on the LAN. start_network is
+            # triggered later from _commit_station_label_if_changed once the
+            # user picks a real name from the dropdown.
+            return
         self.start_network()
 
     def _open_network_settings_window(self) -> None:
@@ -3480,10 +3529,14 @@ class ChairsideReadyAlertApp:
         # Combobox is readonly — the value is always one of the dropdown entries
         # already in station_labels. Nothing to validate or auto-add.
         new = self.label_var.get().strip()
-        if not new:
+        # Defensive: ignore an empty value or the placeholder ever landing here.
+        # Picking from the dropdown can only yield a real label, but a future
+        # programmatic set() could in theory pass the placeholder through.
+        if not new or new == STATION_NAME_PROMPT:
             return
         if new == self._last_committed_label:
             return
+        was_unset = not self._last_committed_label
         self._last_committed_label = new
         self.config_store.data["label"] = new
         if new in DEFAULT_STATION_SOUNDS and not str(
@@ -3494,24 +3547,68 @@ class ChairsideReadyAlertApp:
         self._target_signature = None
         self._refresh_target_checkboxes(list(self.online_labels))
         self._apply_default_target_selection(force=True)
+        # A real name is now selected — flip the Ready button on and clear the
+        # red "you need to choose a station" prompt under the dropdown.
+        self._set_ready_button_enabled(True)
         if self._network_running:
             self.stop_network()
             self.start_network()
+        elif was_unset:
+            # Fresh-install path: _auto_start_network deferred startup until a
+            # station name existed. Now that one does, kick off the LAN.
+            self.start_network()
         else:
             self._set_duplicate_name_warning(False)
+        self._refresh_station_name_warning()
+
+    def _has_real_station_label(self) -> bool:
+        """True once the user has chosen an actual station name from the dropdown.
+        Fresh-install state (label unset, or still showing STATION_NAME_PROMPT)
+        returns False. Used to gate network startup and Ready-button activation
+        so a brand-new install can't broadcast a colliding "Room 1" beacon."""
+        if not hasattr(self, "label_var"):
+            return False
+        raw = self.label_var.get().strip()
+        return bool(raw) and raw != STATION_NAME_PROMPT
+
+    def _refresh_station_name_warning(self) -> None:
+        """Drive the message label under the Station name combobox. Station-unset
+        warning (red) takes priority over duplicate-name warning (amber). Called
+        from _set_duplicate_name_warning, _apply_theme, _load_config_into_form,
+        and _commit_station_label_if_changed."""
+        if not hasattr(self, "duplicate_name_var"):
+            return
+        t = self._current_theme
+        if not self._has_real_station_label():
+            self.duplicate_name_var.set("you need to choose a station to send ready alerts")
+            color = "#dc2626"
+        elif self._duplicate_name_detected:
+            self.duplicate_name_var.set("Another computer may be using the same station name.")
+            color = "#b45309"
+        else:
+            self.duplicate_name_var.set("")
+            color = t["sub"]
+        if hasattr(self, "duplicate_name_label"):
+            self.duplicate_name_label.configure(fg=color, bg=t["card_bg"], font=_ui_font(8))
+
+    def _set_ready_button_enabled(self, enabled: bool) -> None:
+        """Visually + functionally disable the Ready button until the user picks
+        a station. send_ready_selected / send_ready_all also re-check the gate,
+        so this is defense-in-depth: a stray click never sends a Ready alert
+        from a station whose name is still the placeholder."""
+        self._ready_button_enabled = bool(enabled)
+        btn = getattr(self, "_ready_btn_widget", None)
+        if btn is None:
+            return
+        t = self._current_theme
+        if enabled:
+            btn.update_colors(t["accent"], t["accent_text"], t["card_bg"])
+        else:
+            btn.update_colors("#9ca3af", "#ffffff", t["card_bg"])
 
     def _set_duplicate_name_warning(self, is_duplicate: bool) -> None:
         self._duplicate_name_detected = bool(is_duplicate)
-        if not hasattr(self, "duplicate_name_var"):
-            return
-        if self._duplicate_name_detected:
-            self.duplicate_name_var.set("Another computer may be using the same station name.")
-        else:
-            self.duplicate_name_var.set("")
-        if hasattr(self, "duplicate_name_label"):
-            t = self._current_theme
-            warn_color = "#b45309" if self._duplicate_name_detected else t["sub"]
-            self.duplicate_name_label.configure(fg=warn_color, bg=t["card_bg"], font=_ui_font(8))
+        self._refresh_station_name_warning()
 
     def _refresh_duplicate_name_warning(self, snap: dict[str, dict], now: float) -> None:
         if not self._network_running:
@@ -4054,8 +4151,8 @@ class ChairsideReadyAlertApp:
             return
 
         label = self.label_var.get().strip()
-        if not label:
-            messagebox.showerror(APP_TITLE, "Please choose a label for this computer.")
+        if not label or label == STATION_NAME_PROMPT:
+            messagebox.showerror(APP_TITLE, "Choose a station name from the dropdown before starting the network.")
             return
 
         self.local_ips = local_ipv4_addresses()
@@ -4123,6 +4220,12 @@ class ChairsideReadyAlertApp:
         return None
 
     def send_ready_selected(self) -> None:
+        if not self._has_real_station_label():
+            # Belt-and-suspenders: the Ready button is also visually disabled
+            # by _set_ready_button_enabled, but the menu shortcut and keyboard
+            # bindings can still fire send_ready_selected. Block here too.
+            messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
+            return
         if not self._network_running or not self.peer_clients:
             messagebox.showwarning(APP_TITLE, "Network is not connected yet.")
             return
@@ -4155,6 +4258,9 @@ class ChairsideReadyAlertApp:
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
+        if not self._has_real_station_label():
+            messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
+            return
         if not self._network_running or not self.peer_clients:
             messagebox.showwarning(APP_TITLE, "Network is not connected yet.")
             return
