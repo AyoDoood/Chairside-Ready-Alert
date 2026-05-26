@@ -31,7 +31,12 @@ Write-Info "Checking Python launcher..."
 
 Write-Info "Installing/updating build dependencies..."
 & $PythonExe @PythonArgs -m pip install --upgrade pip
-& $PythonExe @PythonArgs -m pip install --upgrade pyinstaller pystray pillow cairosvg certifi
+# winsdk is required by the in-app trial gating to read the Microsoft Store
+# license (Windows.Services.Store.StoreContext). Without it, paying customers
+# would be locked out at trial end with no in-app unlock path. winsdk ships
+# arch-specific wheels (x64/x86/arm64); pip resolves the right one because
+# the matrix legs use an arch-pinned Python interpreter.
+& $PythonExe @PythonArgs -m pip install --upgrade pyinstaller pystray pillow cairosvg certifi winsdk
 
 Write-Info "Cleaning previous build artifacts..."
 if (Test-Path ".\build") { Remove-Item ".\build" -Recurse -Force }
@@ -50,6 +55,7 @@ Write-Info "Building Windows executable (onedir)..."
   --collect-submodules pystray `
   --collect-submodules PIL `
   --collect-data certifi `
+  --collect-all winsdk `
   --add-data "$licensesDir;licenses" `
   "$appScript"
 

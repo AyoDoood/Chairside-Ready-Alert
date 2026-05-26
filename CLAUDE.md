@@ -79,7 +79,17 @@ As of 1.0.29, the Store distribution is a **one-time paid app at $14.99 USD**, n
 - `.NET 8` build steps from CI
 - The `winrt-*` Python dependencies
 
-If you find any commit, comment, or doc still referencing `StoreHelper`, paywall windows, or subscription Add-ons, it is stale — those code paths have been deleted. The Store purchase is now handled entirely by the Store's standard Get/Buy flow at the listing level; the app itself contains no purchase code and treats every running instance as already-licensed.
+If you find any commit, comment, or doc still referencing `StoreHelper`, paywall windows, or subscription Add-ons, it is stale — those code paths have been deleted. The Store purchase is still handled entirely by the Store's standard Get/Buy flow at the listing level; the app itself never invokes a purchase API. **However**, as of the trial-gating change, the app does enforce a 7-day in-app trial when `IS_FROZEN` is True and consults `Windows.Services.Store.StoreContext.GetAppLicenseAsync()` (via the `winsdk` package) to recognize a real purchase — see "Trial / paid-license gating" below. Dev runs are always treated as licensed.
+
+## Trial / paid-license gating (frozen Store builds only)
+
+Frozen builds (`IS_FROZEN == True`) enforce a `TRIAL_DAYS`-day in-app trial anchored on `first_launch_iso`, a date string stamped into the config the first time the app launches without one. Helpers `_trial_days_remaining()` and `_query_store_license_paid()` near the top of `chairside_ready_alert.py` are the policy; the App-level methods (`_trial_status`, `_is_locked_out`, `_apply_trial_state_to_ui`, `_kick_store_license_refresh`, etc., grouped under `_show_about_dialog`) are the wiring. Dev runs short-circuit every helper to "no enforcement, paid=True", so `python chairside_ready_alert.py` is unaffected.
+
+- Reminder dialogs fire **once** per threshold in `TRIAL_REMINDER_DAYS` (currently 6/3/1 days). Each fire is recorded in `trial_reminders_shown` in the config so it can't pop again on the next launch.
+- Lockout, when expired and unpaid: the Ready button shows a "buy now?" modal (`_prompt_trial_expired_dialog`) instead of sending; incoming Ready chats are dropped silently and recorded only in the diagnostic log (peers should not see a bounce that reveals the receiver is unlicensed). The LAN stack (discovery + TCP mesh) keeps running so the user still appears online and the unlock path doesn't need a restart.
+- The Store license check (`_query_store_license_paid`) requires the **`winsdk`** Python package. It is imported lazily and tolerantly: if missing, the check returns `None` (unknown) and the cached `paid_unlocked` flag is kept. **For Store builds to actually recognize purchases, `winsdk` must be added to the PyInstaller spec for `Windows Store Submission/build_windows_exe.bat` and to the GitHub Actions workflow.** Without it, paying users will be locked out at trial end with no in-app unlock path — they would have to ship a build that ships winsdk.
+- The Buy button prefers `ms-windows-store://pdp/?ProductId=…` when `STORE_PRODUCT_ID` is filled in; it falls back to `STORE_PRODUCT_WEB_URL` while the constant is empty. Fill the ProductId in once the Partner Center listing publishes it.
+- Trial state is config-backed (deleting the config or reinstalling resets the trial). This is intentional for the chosen "install-date + Store API fallback" design — the Store API is the authoritative paid-state signal; the install-date is just a countdown. Don't add hidden-file or registry-based tamper resistance without explicit ask.
 
 ## Releasing — version sync checklist
 

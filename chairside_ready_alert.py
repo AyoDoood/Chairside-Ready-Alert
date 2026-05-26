@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.58"
+APP_VERSION = "1.0.59"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -160,6 +160,74 @@ INSTANCE_LOCK_FILE = (
 FOCUS_IPC_HOST = "127.0.0.1"
 FOCUS_IPC_PORT = 59662 if IS_FROZEN else 59661
 FOCUS_IPC_TOKEN = "CHAIRSIDE_FOCUS_V1"
+
+# --- Microsoft Store trial / paid-license gating ---------------------------
+# Only enforced on frozen Store builds. Dev runs (`python chairside_ready_alert.py`)
+# are always treated as fully licensed so this code never gets in the way locally.
+# The trial is anchored on the first-launch timestamp persisted in the config
+# (first_launch_iso). The Store's own license API is consulted as the
+# authoritative paid-state signal: a True from StoreContext.GetAppLicenseAsync
+# (active and not trial) clears the lockout immediately, even if the user
+# purchased after the trial elapsed.
+TRIAL_DAYS = 7
+# Days-remaining thresholds at which the app pops a one-time reminder dialog.
+# Each value fires at most once per install (tracked in trial_reminders_shown).
+TRIAL_REMINDER_DAYS = (6, 3, 1)
+# Microsoft Store ProductId for the deep-link Buy URL ("ms-windows-store://pdp/?ProductId=...").
+# Leave blank until the Partner Center listing publishes a real ProductId; while
+# blank the Buy button falls back to STORE_PRODUCT_WEB_URL.
+STORE_PRODUCT_ID = "9NKDHB58JJC5"
+STORE_PRODUCT_WEB_URL = "https://apps.microsoft.com/detail/9NKDHB58JJC5"
+
+
+def _trial_days_remaining(first_launch_iso: str) -> Optional[int]:
+    """Days left in the install-date trial, or None if first_launch_iso is unset/unparseable.
+    Returns 0 (not negative) once the trial has elapsed so callers can treat 0 as 'expired'."""
+    if not first_launch_iso:
+        return None
+    try:
+        start = datetime.strptime(first_launch_iso, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    elapsed = (datetime.now().date() - start).days
+    if elapsed < 0:
+        # Clock skew or user rolled the system clock back. Don't grant extra
+        # trial time — clamp to 0 days remaining (treated as expired).
+        return 0
+    return max(0, TRIAL_DAYS - elapsed)
+
+
+def _query_store_license_paid() -> Optional[bool]:
+    """Ask the Microsoft Store whether this user has purchased the full app.
+
+    Returns True if the license is active AND not a Store-side trial (i.e. paid),
+    False if active-but-trial or inactive, or None if we can't tell (winsdk
+    missing, not a Store install, transient API failure). None must be treated
+    as 'unknown' — fall back to the cached paid_unlocked value rather than
+    locking out a paying user during a flaky Store call.
+
+    Runs synchronously on whatever thread calls it. Do not call from the Tk
+    main thread — bounce off a worker and post the result via the UI queue.
+    """
+    if sys.platform != "win32" or not IS_FROZEN:
+        # Dev / non-Windows runs are always treated as licensed at a higher
+        # level — callers shouldn't even hit this. Return None to be safe.
+        return None
+    try:
+        import asyncio
+        # winsdk is the maintained Python projection of the Windows SDK. It
+        # must be added to the PyInstaller spec for Store builds; until it is,
+        # this import fails and we report 'unknown' (None), leaving callers
+        # to fall back to the cached paid_unlocked flag.
+        from winsdk.windows.services.store import StoreContext  # type: ignore
+    except Exception:
+        return None
+    try:
+        ctx = StoreContext.get_default()
+        lic = asyncio.run(ctx.get_app_license_async())
+        return bool(lic.is_active and not lic.is_trial)
+    except Exception:
+        return None
 
 
 def _version_tuple(s: str) -> tuple[int, int, int]:
@@ -534,6 +602,17 @@ class ConfigStore:
             "tray_visibility_help_shown": False,
             "update_manifest_url": "",
             "autostart_enabled": True,
+            # Microsoft Store paid-app trial gating (frozen builds only).
+            # first_launch_iso is stamped on the first launch where this field is empty.
+            "first_launch_iso": "",
+            # Which reminder thresholds (from TRIAL_REMINDER_DAYS) have already
+            # been shown to this user, so we never pop the same modal twice.
+            "trial_reminders_shown": [],
+            # Cached last-known Store license state. Refreshed in the background
+            # on launch + on demand. We trust this even if a later Store query
+            # returns None (unknown), so a temporarily flaky Store API doesn't
+            # lock out a paying user.
+            "paid_unlocked": False,
         }
         self.load()
 
@@ -1300,6 +1379,9 @@ class ChairsideReadyAlertApp:
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
+        # Stamp first-launch date for the install-date trial (frozen builds only).
+        # Must run before any UI code that consults trial state.
+        self._stamp_first_launch_if_needed()
         # Whimsy: stick-figure animation trigger. State (count, target,
         # last-qualifying timestamp) persists across app restarts and
         # computer shutdown via the shared config file — closing the app to
@@ -1391,6 +1473,9 @@ class ChairsideReadyAlertApp:
             self.root.after(250, lambda: self.root.attributes("-topmost", False))
         self.root.after(120, self._process_ui_queue)
         self.root.after(260, self._auto_start_network)
+        # Trial UI + license refresh (frozen builds only; helpers no-op otherwise).
+        self.root.after(300, self._apply_trial_state_to_ui)
+        self.root.after(800, self._kick_store_license_refresh)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         if sys.platform == "darwin":
             try:
@@ -2073,6 +2158,260 @@ class ChairsideReadyAlertApp:
             f"support@fieldcrestdental.com\n\n"
             f"Please allow 24-48 hours for a response.",
         )
+
+    # ---- Trial / paid-license gating (frozen Store builds only) ----------
+    # Dev runs are always treated as licensed: every helper below short-circuits
+    # to "paid, no enforcement" when IS_FROZEN is False. See the TRIAL_DAYS /
+    # _query_store_license_paid block near the top of the file for the policy.
+
+    def _stamp_first_launch_if_needed(self) -> None:
+        if not IS_FROZEN:
+            return
+        if str(self.config_store.data.get("first_launch_iso", "")).strip():
+            return
+        self.config_store.data["first_launch_iso"] = _today_iso()
+        try:
+            self.config_store.save()
+        except Exception:
+            pass
+
+    def _trial_status(self) -> dict:
+        """Snapshot of trial state used by both UI and gating checks.
+        Keys: enforce (bool), paid (bool), remaining_days (int|None), expired (bool)."""
+        if not IS_FROZEN:
+            return {"enforce": False, "paid": True, "remaining_days": None, "expired": False}
+        paid = bool(self.config_store.data.get("paid_unlocked", False))
+        remaining = _trial_days_remaining(
+            str(self.config_store.data.get("first_launch_iso", ""))
+        )
+        # remaining=None means we haven't stamped a first-launch yet — treat as
+        # "trial just starting" (TRIAL_DAYS left) so we don't accidentally lock
+        # out a user before stamping completes.
+        if remaining is None:
+            remaining = TRIAL_DAYS
+        expired = (remaining <= 0) and not paid
+        return {"enforce": True, "paid": paid, "remaining_days": remaining, "expired": expired}
+
+    def _is_locked_out(self) -> bool:
+        st = self._trial_status()
+        return st["enforce"] and st["expired"] and not st["paid"]
+
+    def _kick_store_license_refresh(self) -> None:
+        """Background-thread Store license check. Posts a ('license', bool) onto
+        the UI queue when the Store returns a definite answer; an unknown
+        result (None) is dropped so we keep using the cached paid_unlocked flag."""
+        if not IS_FROZEN:
+            return
+
+        def _worker():
+            result = _query_store_license_paid()
+            if result is None:
+                return
+            try:
+                self.queue.put(("license", bool(result)))
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_license_refresh_result(self, paid: bool) -> None:
+        """UI-thread handler for the Store license check result."""
+        prev = bool(self.config_store.data.get("paid_unlocked", False))
+        if prev == paid:
+            return
+        self.config_store.data["paid_unlocked"] = bool(paid)
+        try:
+            self.config_store.save()
+        except Exception:
+            pass
+        self._apply_trial_state_to_ui()
+        # If a paid license just appeared and the network was held back, start it.
+        if paid and not self._network_running:
+            try:
+                self._auto_start_network()
+            except Exception:
+                pass
+
+    def _open_buy_store_listing(self) -> None:
+        """Take the user to the Microsoft Store listing to purchase. Prefers the
+        ms-windows-store: deep-link (opens the Store app directly) and falls
+        back to the apps.microsoft.com web URL if the deep-link or ProductId
+        isn't usable."""
+        deep_link = (
+            f"ms-windows-store://pdp/?ProductId={STORE_PRODUCT_ID}"
+            if STORE_PRODUCT_ID
+            else ""
+        )
+        opened = False
+        if deep_link and sys.platform == "win32":
+            try:
+                os.startfile(deep_link)  # type: ignore[attr-defined]
+                opened = True
+            except Exception:
+                opened = False
+        if not opened:
+            try:
+                webbrowser.open(STORE_PRODUCT_WEB_URL)
+            except Exception:
+                pass
+        # After nudging the user toward purchase, schedule a Store-license re-check
+        # ~25s later so a completed purchase clears the lockout without restart.
+        self.root.after(25_000, self._kick_store_license_refresh)
+
+    def _prompt_trial_expired_dialog(self) -> None:
+        """Modal shown when the user clicks Ready (or All) after the trial expired.
+        Offers Buy / Refresh paths, and silently kicks a Store-license re-check
+        so a purchase completed in another window unlocks without a restart."""
+        msg = (
+            f"Your free trial of {APP_TITLE} has ended.\n\n"
+            f"Sending and receiving Ready alerts is disabled until you purchase "
+            f"the app from the Microsoft Store.\n\n"
+            f"Open the Microsoft Store now?"
+        )
+        try:
+            if messagebox.askyesno(f"{APP_TITLE} — Free trial ended", msg):
+                self._open_buy_store_listing()
+            else:
+                # User said No; still re-check the license in case they already
+                # bought it earlier from outside the app.
+                self._kick_store_license_refresh()
+        except Exception:
+            pass
+
+    def _show_trial_reminder_dialog(self, remaining_days: int) -> None:
+        if remaining_days <= 0:
+            return
+        day_word = "day" if remaining_days == 1 else "days"
+        msg = (
+            f"Your free trial of {APP_TITLE} ends in {remaining_days} {day_word}.\n\n"
+            f"When the trial ends, sending and receiving Ready alerts will be disabled "
+            f"until you purchase the app from the Microsoft Store.\n\n"
+            f"Open the Microsoft Store now to purchase?"
+        )
+        try:
+            if messagebox.askyesno(f"{APP_TITLE} — Free trial reminder", msg):
+                self._open_buy_store_listing()
+        except Exception:
+            pass
+
+    def _build_trial_banner(self, parent: tk.Misc, bg_color: str) -> None:
+        """Create (but do not pack) the expiration / countdown banner shown
+        above the main top_row. Idempotent — re-running on theme change replaces
+        the existing widget."""
+        if getattr(self, "_trial_banner_frame", None) is not None:
+            try:
+                self._trial_banner_frame.destroy()
+            except Exception:
+                pass
+        self._trial_banner_frame = tk.Frame(parent, bg=bg_color)
+        self._trial_banner_inner = tk.Frame(self._trial_banner_frame, bg=bg_color)
+        self._trial_banner_inner.pack(fill="x", padx=4, pady=4)
+        self._trial_banner_text_var = tk.StringVar(value="")
+        self._trial_banner_label = tk.Label(
+            self._trial_banner_inner,
+            textvariable=self._trial_banner_text_var,
+            bg=bg_color,
+            fg="#5a3a00",
+            font=_ui_font(10, "bold"),
+            anchor="w",
+            justify="left",
+            wraplength=720,
+        )
+        self._trial_banner_label.pack(side="left", fill="x", expand=True, padx=(8, 8))
+        self._trial_banner_buy_btn = tk.Button(
+            self._trial_banner_inner,
+            text="Buy in Microsoft Store",
+            command=self._open_buy_store_listing,
+            font=_ui_font(10, "bold"),
+        )
+        self._trial_banner_buy_btn.pack(side="right", padx=(4, 8))
+        self._trial_banner_refresh_btn = tk.Button(
+            self._trial_banner_inner,
+            text="I purchased — refresh",
+            command=self._kick_store_license_refresh,
+            font=_ui_font(10),
+        )
+        self._trial_banner_refresh_btn.pack(side="right", padx=(4, 4))
+
+    def _set_trial_banner(self, visible: bool, text: str = "", expired: bool = False) -> None:
+        frame = getattr(self, "_trial_banner_frame", None)
+        if frame is None:
+            return
+        if not visible:
+            try:
+                frame.pack_forget()
+            except Exception:
+                pass
+            return
+        # Expired banner uses a red wash; reminder banner uses a soft amber.
+        bg = "#f8d2d2" if expired else "#fff3c4"
+        fg = "#7a1f1f" if expired else "#5a3a00"
+        for w in (frame, self._trial_banner_inner, self._trial_banner_label,
+                  self._trial_banner_buy_btn, self._trial_banner_refresh_btn):
+            try:
+                if isinstance(w, tk.Button):
+                    w.configure(bg=bg)
+                else:
+                    w.configure(bg=bg)
+            except Exception:
+                pass
+        try:
+            self._trial_banner_label.configure(fg=fg)
+        except Exception:
+            pass
+        self._trial_banner_text_var.set(text)
+        try:
+            # Pack above top_row by re-packing before it. We packed top_row with
+            # fill=both, expand=True earlier; banner uses fill=x. The pack order
+            # in _build_ui placed the banner immediately before top_row, so a
+            # plain pack(fill=x) here keeps it on top.
+            frame.pack(fill="x", pady=(0, 8), before=self._top_row_frame)
+        except Exception:
+            try:
+                frame.pack(fill="x", pady=(0, 8))
+            except Exception:
+                pass
+
+    def _apply_trial_state_to_ui(self) -> None:
+        st = self._trial_status()
+        if not st["enforce"] or st["paid"]:
+            self._set_trial_banner(visible=False)
+            return
+        remaining = int(st["remaining_days"])
+        if st["expired"]:
+            self._set_trial_banner(
+                visible=True,
+                text=(
+                    "Free trial ended. Sending and receiving Ready alerts is disabled. "
+                    "Buy Chairside Ready Alert in the Microsoft Store to continue."
+                ),
+                expired=True,
+            )
+        elif remaining <= max(TRIAL_REMINDER_DAYS):
+            day_word = "day" if remaining == 1 else "days"
+            self._set_trial_banner(
+                visible=True,
+                text=f"Free trial: {remaining} {day_word} remaining. Buy in the Microsoft Store to keep using the app after the trial ends.",
+                expired=False,
+            )
+        else:
+            self._set_trial_banner(visible=False)
+        # One-time reminder dialog when remaining first hits each threshold.
+        if remaining in TRIAL_REMINDER_DAYS:
+            shown_raw = self.config_store.data.get("trial_reminders_shown", [])
+            try:
+                shown = {int(x) for x in shown_raw}
+            except (TypeError, ValueError):
+                shown = set()
+            if remaining not in shown:
+                shown.add(remaining)
+                self.config_store.data["trial_reminders_shown"] = sorted(shown)
+                try:
+                    self.config_store.save()
+                except Exception:
+                    pass
+                # Defer the dialog so we don't block startup UI assembly.
+                self.root.after(1200, lambda d=remaining: self._show_trial_reminder_dialog(d))
 
     def _autostart_windows_bat_path(self) -> str:
         appdata = os.environ.get("APPDATA", "")
@@ -3100,7 +3439,11 @@ class ChairsideReadyAlertApp:
         # there are few peers detected the log grows taller; when there are
         # many peers the Send Message card grows and the log shrinks.
         top_row = tk.Frame(main, bg=abg)
+        # Build (but do not yet show) the trial banner so it is positioned
+        # immediately above top_row when _apply_trial_state_to_ui packs it.
+        self._build_trial_banner(main, bg_color=abg)
         top_row.pack(fill="both", expand=True, pady=(0, 10))
+        self._top_row_frame = top_row
         self._main_shell_frames = (main, header, top_row)
 
         # Station Setup — compact left card
@@ -4226,6 +4569,9 @@ class ChairsideReadyAlertApp:
             # bindings can still fire send_ready_selected. Block here too.
             messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
             return
+        if self._is_locked_out():
+            self._prompt_trial_expired_dialog()
+            return
         if not self._network_running or not self.peer_clients:
             messagebox.showwarning(APP_TITLE, "Network is not connected yet.")
             return
@@ -4260,6 +4606,9 @@ class ChairsideReadyAlertApp:
     def send_ready_all(self) -> None:
         if not self._has_real_station_label():
             messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
+            return
+        if self._is_locked_out():
+            self._prompt_trial_expired_dialog()
             return
         if not self._network_running or not self.peer_clients:
             messagebox.showwarning(APP_TITLE, "Network is not connected yet.")
@@ -4344,6 +4693,8 @@ class ChairsideReadyAlertApp:
             elif kind == "label_event":
                 action, label = payload
                 self._apply_remote_label_event(action, label)
+            elif kind == "license":
+                self._on_license_refresh_result(bool(payload))
         self.root.after(120, self._process_ui_queue)
 
     def _handle_network_payload(self, payload: dict) -> None:
@@ -4374,6 +4725,13 @@ class ChairsideReadyAlertApp:
                 body = str(text).strip()
                 if body.lower() != "ready":
                     self._append_diag(f"Chat from {sender} (not logged in main window): {body!r}")
+                    return
+                # Drop incoming Ready alerts silently when this station's trial
+                # has expired without purchase. Other peers don't get a bounce —
+                # they shouldn't know the receiver is locked out — and we log
+                # only to the diagnostic stream so users see why nothing fired.
+                if self._is_locked_out():
+                    self._append_diag(f"Incoming Ready from {sender} dropped: trial expired (purchase to re-enable).")
                     return
                 self._append_incoming_ready_log(f"[{ts}] {sender}: Ready")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
