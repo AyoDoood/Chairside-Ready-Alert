@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.60"
+APP_VERSION = "1.0.61"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -3452,6 +3452,11 @@ class ChairsideReadyAlertApp:
         #                   new Ready arrives. Tk text-tag attributes merge, so
         #                   recent1's font/foreground stick while the flash bg
         #                   smoothly fades out.
+        # Since 1.0.61 all three tags apply ONLY to the "Sender: Ready" body of
+        # the line, not the "[hh:mm AP] " timestamp prefix. The timestamp keeps
+        # the log's default 10pt across every tier so the time columns line up
+        # consistently regardless of which line is most-recent. See
+        # _append_incoming_ready_log for the body_offset computation.
         # Re-configured on every theme change. Bumping the animation sequence
         # aborts any in-flight flash that captured the old colors.
         if hasattr(self, "log"):
@@ -4389,13 +4394,31 @@ class ChairsideReadyAlertApp:
             line_start = self.log.index("_insert_anchor")
             line_end = self.log.index("end - 1c")
             self.log.mark_unset("_insert_anchor")
-            self.log.tag_add("recent1", line_start, line_end)
-            # The flash tag is applied to the same range. Its background color
-            # is what animates; recent1's font and foreground are static.
-            self.log.tag_add("recent1_flash", line_start, line_end)
-            self.log.mark_set("recent1_start", line_start)
+
+            # Emphasis is applied to the "Sender: Ready" body only — the
+            # "[hh:mm AP] " timestamp prefix stays at the log's default 10pt
+            # so timestamps line up consistently across recent1, recent2,
+            # and the older plain lines. The text always begins with the
+            # bracketed timestamp ("[02:30 PM] Sender: Ready"); split on
+            # the first "] " and start the emphasis range two characters
+            # later (past the bracket + space). If the prefix can't be
+            # found for any reason (unexpected format / legacy data), fall
+            # back to emphasizing the whole line so the user still sees
+            # the visual hierarchy.
+            prefix_end = text.find("] ")
+            body_offset = prefix_end + 2 if prefix_end >= 0 else 0
+            try:
+                body_start = self.log.index(f"{line_start} + {body_offset}c")
+            except tk.TclError:
+                body_start = line_start
+            self.log.tag_add("recent1", body_start, line_end)
+            # The flash tag tracks the same range. Concentrating the flash
+            # on the body matches the eye's focus to the emphasized text;
+            # the static timestamp does not need to flash.
+            self.log.tag_add("recent1_flash", body_start, line_end)
+            self.log.mark_set("recent1_start", body_start)
             # 'right' gravity: same reasoning as recent2_start above — keeps
-            # the mark anchored to the recent1 line even after an outgoing
+            # the mark anchored to the recent1 body even after an outgoing
             # insert that pushes it down.
             self.log.mark_gravity("recent1_start", "right")
             self.log.mark_set("recent1_end", line_end)
