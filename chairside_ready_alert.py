@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.63"
+APP_VERSION = "1.0.64"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -532,29 +532,38 @@ def now_str_short() -> str:
 
 
 def _migrate_old_log_line(text: str) -> str:
-    """Rewrite a pre-1.0.62 Ready-log line ('[02:30 PM] Body') to the new
-    layout ('Body  [02:30 PM]'). Returns text unchanged if it isn't in the
-    old layout, so new-format lines (which never start with '[') and any
-    unrecognized input pass through untouched.
+    """Normalize a Ready-log line to the 1.0.64 canonical form 'body\\t[ts]'.
 
-    Used by _load_ready_log to migrate today's persisted entries on the fly
-    when the user first launches a 1.0.62+ build — the on-disk file is not
-    rewritten, so this re-runs once per launch until midnight wipes the file
-    and the day's first new entry starts the new-format era. Cheap enough
-    that re-running is fine."""
-    if not text.startswith("["):
+    Handles three input shapes:
+      - Pre-1.0.62 ('[ts] body')        → 'body\\t[ts]'
+      - 1.0.62 ('body  [ts]', 2 spaces) → 'body\\t[ts]'
+      - 1.0.64+ ('body\\t[ts]')         → unchanged
+      - Anything unrecognized           → unchanged pass-through
+
+    Used by _load_ready_log on the persisted ready_log.txt file. The on-disk
+    file is intentionally not rewritten — the migration runs on every launch
+    on whatever pre-canonical lines remain in today's file. Cheap, and avoids
+    rewrite-during-load edge cases. Tomorrow's file (after midnight rollover)
+    is uniformly canonical from the start."""
+    # Pre-1.0.62 layout: '[ts] body'.
+    if text.startswith("["):
+        bracket_end = text.find("] ")
+        if bracket_end >= 0:
+            ts = text[1:bracket_end]
+            body = text[bracket_end + 2:]
+            if ts and body:
+                return f"{body}\t[{ts}]"
         return text
-    bracket_end = text.find("] ")
-    if bracket_end < 0:
-        return text
-    ts = text[1:bracket_end]
-    body = text[bracket_end + 2:]
-    # Sanity check: the captured "timestamp" should look like a clock value.
-    # Anything weirder (an opening bracket somewhere unexpected, an empty
-    # body) is left alone rather than reformatted into garbage.
-    if not ts or not body:
-        return text
-    return f"{body}  [{ts}]"
+    # 1.0.62 layout: 'body  [ts]'. The double-space separator was a
+    # transition-period choice that 1.0.64 replaced with a tab so the
+    # right-aligned tab stop can column-align all timestamps.
+    sep_idx = text.find("  [")
+    if sep_idx >= 0:
+        body = text[:sep_idx]
+        rest = text[sep_idx + 2:]  # includes the '['
+        if body and rest.startswith("[") and rest.endswith("]"):
+            return f"{body}\t{rest}"
+    return text
 
 
 def _strip_seconds_from_ts(ts: str) -> str:
@@ -3697,6 +3706,15 @@ class ChairsideReadyAlertApp:
         self._log_panel.pack(fill="both", expand=True, pady=(8, 0))
         self.log = self._log_panel.log
         self.log.configure(state="disabled")
+        # Right-justify timestamps: every log line uses '\t' between body
+        # and "[hh:mm AP]"; the tab stop is repositioned on every Configure
+        # event so it tracks the right edge of the visible log area as the
+        # window resizes. See _refresh_log_tabstop for the math.
+        self.log.bind("<Configure>", self._refresh_log_tabstop)
+        # Run once now so the first batch of restored / fresh entries also
+        # gets the right-aligned tab stop instead of falling back to Tk's
+        # default 8-space tab width.
+        self.root.after_idle(self._refresh_log_tabstop)
 
         # Ready button card (layout_preview: .ready-wrap centered, .ready-b ~80% width)
         _rbc = RoundedCard(main, bg=cbg, outer_bg=abg, radius=12, padding=20, border=cborder)
@@ -4198,6 +4216,30 @@ class ChairsideReadyAlertApp:
             self.targets_frame.grid_columnconfigure(column, weight=1)
         self._rebuild_default_menu()
 
+    def _refresh_log_tabstop(self, _event: object = None) -> None:
+        """Reposition the log widget's right-aligned tab stop so every line's
+        timestamp ('\\t[hh:mm AP]') is right-justified near the right edge of
+        the visible log area.
+
+        Bound to the log's <Configure> event so window resizes keep the tab
+        stop tracking the current widget width. The 12-px inset keeps the
+        timestamps from kissing the widget border or scrollbar. Falls back
+        silently on TclError (e.g., widget destroyed mid-resize)."""
+        try:
+            width = self.log.winfo_width()
+        except tk.TclError:
+            return
+        if width <= 1:
+            # Widget not realized yet; nothing useful to compute. The
+            # after_idle reschedule in _build_ui will catch us on the next
+            # paint pass.
+            return
+        tab_px = max(40, width - 12)
+        try:
+            self.log.configure(tabs=(tab_px, "right"))
+        except tk.TclError:
+            pass
+
     def _append_diag(self, text: str) -> None:
         line = f"[{now_str()}] {text}"
         self._diag_lines.append(line)
@@ -4377,11 +4419,14 @@ class ChairsideReadyAlertApp:
             else:
                 # Legacy v1.0.38 row (no prefix) — best-effort plain insert,
                 # tagged row_plain so it lines up with everything else.
+                # Migrated through the same helper as IN/OUT lines so any
+                # pre-1.0.62 timestamp layouts also get canonicalized.
                 self.log.configure(state="normal")
                 try:
+                    migrated = _migrate_old_log_line(line)
                     self.log.mark_set("_legacy_anchor", "end - 1c")
                     self.log.mark_gravity("_legacy_anchor", "left")
-                    self.log.insert("end", line + "\n")
+                    self.log.insert("end", migrated + "\n")
                     ls = self.log.index("_legacy_anchor")
                     le = self.log.index("_legacy_anchor lineend +1c")
                     self.log.mark_unset("_legacy_anchor")
@@ -4515,15 +4560,16 @@ class ChairsideReadyAlertApp:
             self.log.mark_unset("_insert_anchor")
 
             # Font emphasis applies to the "Sender: Ready" body only — the
-            # trailing "  [hh:mm AP]" timestamp stays at the log's default
+            # trailing "\t[hh:mm AP]" timestamp stays at the log's default
             # 10pt so timestamps line up consistently across recent1,
             # recent2, and the older plain lines. The body sits at the
-            # start of the line and ends at the first "  [" separator (two
-            # spaces + bracket). If the separator can't be found (legacy
-            # data from <= 1.0.61 where the timestamp was at the front),
-            # fall back to emphasizing the whole line.
-            separator = "  ["
-            sep_idx = text.find(separator)
+            # start of the line and ends at the tab character (which is
+            # also where the right-aligned tab stop floats the timestamp
+            # to the right edge of the widget — see _refresh_log_tabstop).
+            # If the separator can't be found (legacy data from <= 1.0.61
+            # where the timestamp was at the front of the line), fall back
+            # to emphasizing the whole line.
+            sep_idx = text.find("\t")
             if sep_idx >= 0:
                 try:
                     body_end_index = self.log.index(f"{line_start} + {sep_idx}c")
@@ -4842,7 +4888,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
-        self._append_ready_log(f"Ready → {', '.join(targets)}  [{now_str_short()}]")
+        self._append_ready_log(f"Ready → {', '.join(targets)}\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -4863,7 +4909,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
             return
         client.send_chat(["ALL"], message)
-        self._append_ready_log(f"Ready → All  [{now_str_short()}]")
+        self._append_ready_log(f"Ready → All\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def _maybe_trigger_whimsy(self) -> None:
@@ -4977,7 +5023,7 @@ class ChairsideReadyAlertApp:
                 if self._is_locked_out():
                     self._append_diag(f"Incoming Ready from {sender} dropped: trial expired (purchase to re-enable).")
                     return
-                self._append_incoming_ready_log(f"{sender}: Ready  [{ts}]")
+                self._append_incoming_ready_log(f"{sender}: Ready\t[{ts}]")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
                 self._focus_and_alert_main_window(alert_sound=alert_sound, alert_volume=int(self.alert_volume_var.get()))
 
