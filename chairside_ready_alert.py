@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.59"
+APP_VERSION = "1.0.60"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -884,25 +884,63 @@ class MessageServer:
                 pass
 
     def _run_server(self) -> None:
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen(20)
-        self.server_socket.settimeout(1.0)
-        self.ui_queue.put(("status", f"Listening for peers on {self.host}:{self.port}"))
-
+        # Outer loop survives transient bind/accept failures. The classic
+        # offender is macOS sleep/wake: a BSD TCP listening socket commonly
+        # returns OSError on the first accept() call after the system wakes,
+        # with no in-kernel recovery. Pre-1.0.60 the server thread just
+        # exited on that OSError and the app silently stopped receiving any
+        # incoming Ready alerts (discovery is UDP and behaves differently,
+        # so the peer list kept looking healthy) until the user restarted
+        # the app. Now we close the dead socket and re-bind on the same
+        # port. Fix B (NSWorkspaceDidWakeNotification) handles wake events
+        # proactively; this loop is the always-on safety net for any other
+        # socket-level surprise.
         while self.running:
             try:
-                client_sock, addr = self.server_socket.accept()
-            except socket.timeout:
+                self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                self.server_socket.bind((self.host, self.port))
+                self.server_socket.listen(20)
+                self.server_socket.settimeout(1.0)
+            except OSError as exc:
+                self.ui_queue.put(("status", f"Could not bind {self.host}:{self.port}: {exc}. Retrying in 5s..."))
+                try:
+                    if self.server_socket:
+                        self.server_socket.close()
+                except Exception:
+                    pass
+                self.server_socket = None
+                # Sleep in 100 ms slices so a concurrent stop() returns quickly.
+                for _ in range(50):
+                    if not self.running:
+                        return
+                    time.sleep(0.1)
                 continue
-            except OSError:
-                break
-            with self.lock:
-                self.client_sockets.add(client_sock)
-            threading.Thread(
-                target=self._handle_client, args=(client_sock, addr), daemon=True
-            ).start()
+
+            self.ui_queue.put(("status", f"Listening for peers on {self.host}:{self.port}"))
+
+            while self.running:
+                try:
+                    client_sock, addr = self.server_socket.accept()
+                except socket.timeout:
+                    continue
+                except OSError as exc:
+                    self.ui_queue.put(("status", f"Listener accept() failed ({exc}); re-binding..."))
+                    break
+                with self.lock:
+                    self.client_sockets.add(client_sock)
+                threading.Thread(
+                    target=self._handle_client, args=(client_sock, addr), daemon=True
+                ).start()
+
+            # Inner loop exited — close the (likely dead) socket before the
+            # outer loop attempts a fresh bind on the next iteration.
+            try:
+                if self.server_socket:
+                    self.server_socket.close()
+            except Exception:
+                pass
+            self.server_socket = None
 
     def _handle_client(self, client_sock: socket.socket, addr) -> None:
         label = None
@@ -1959,13 +1997,37 @@ class ChairsideReadyAlertApp:
             return
         self._show_main_window()
 
+    def _handle_system_wake(self) -> None:
+        """Triggered by an NSWorkspaceDidWakeNotification observer on macOS.
+        macOS sleep-then-wake often leaves the MessageServer's TCP listening
+        socket in a state where the next accept() raises OSError, and inbound
+        _handle_client recv loops still hold dead sockets that will never see
+        another byte. Bounce stop_network/start_network to rebuild a fresh
+        listener and shake loose any stale inbound connections. _run_server
+        also recovers on its own via its outer re-bind loop, but this catches
+        the case proactively so the user does not have to wait for the next
+        failed accept(). No-op when the network isn't running (the user
+        manually stopped it) — we don't want to silently re-enable it."""
+        if self._quitting:
+            return
+        if not self._network_running:
+            return
+        self._append_diag("macOS wake detected — bouncing the LAN to recover from any sleep-broken sockets.")
+        try:
+            self.stop_network()
+        except Exception as exc:
+            self._append_diag(f"stop_network() during wake bounce raised: {exc}")
+        # Brief delay lets the OS release the listener's port before we
+        # try to re-bind it; 500 ms is plenty in practice.
+        self.root.after(500, self.start_network)
+
     def _install_macos_app_delegate(self) -> None:
         if sys.platform != "darwin":
             return
         try:
             import objc  # type: ignore
             from Foundation import NSObject  # type: ignore
-            from AppKit import NSApplication  # type: ignore
+            from AppKit import NSApplication, NSWorkspace  # type: ignore
 
             app_ref = self
 
@@ -1986,11 +2048,42 @@ class ChairsideReadyAlertApp:
                         pass
                     return True
 
+                # NSWorkspaceDidWakeNotification — system woke from sleep.
+                # macOS TCP listening sockets often return OSError on the
+                # first accept() after wake, with no in-kernel recovery,
+                # which silently kills incoming Ready alerts. Bounce the
+                # network so MessageServer rebinds and any half-dead inbound
+                # _handle_client threads are cleared. _run_server's outer
+                # re-bind loop is the safety net; this is the proactive path.
+                def systemDidWake_(self, _notification):
+                    try:
+                        self._app.queue.put(("system_wake", None))
+                    except Exception:
+                        pass
+
             delegate = _AppDelegate.alloc().initWithApp_(app_ref)
             NSApplication.sharedApplication().setDelegate_(delegate)
             self._mac_app_delegate = delegate  # prevent GC
-            self._record_tray_diag("Installed macOS app delegate for Dock reopen.")
-            _append_startup_log("Installed macOS app delegate for Dock reopen.")
+
+            # Subscribe to system wake notifications. The NSWorkspace
+            # notification center is distinct from NSNotificationCenter —
+            # workspace events (sleep/wake/screen lock/user switch) are
+            # only posted on NSWorkspace.sharedWorkspace().notificationCenter().
+            try:
+                ws_nc = NSWorkspace.sharedWorkspace().notificationCenter()
+                ws_nc.addObserver_selector_name_object_(
+                    delegate,
+                    "systemDidWake:",
+                    "NSWorkspaceDidWakeNotification",
+                    None,
+                )
+                self._record_tray_diag("Installed macOS app delegate for Dock reopen + system wake.")
+                _append_startup_log("Installed macOS app delegate for Dock reopen + system wake.")
+            except Exception as wake_exc:
+                # Dock reopen still works even if the wake observer failed
+                # to register; log and fall through.
+                self._record_tray_diag(f"Installed macOS Dock delegate; wake observer failed: {wake_exc}")
+                _append_startup_log(f"Installed macOS Dock delegate; wake observer failed: {wake_exc}")
         except Exception as exc:
             self._append_diag(f"Could not install macOS Dock reopen delegate: {exc}")
             _append_startup_log(f"Could not install macOS Dock reopen delegate: {exc}")
@@ -4695,6 +4788,8 @@ class ChairsideReadyAlertApp:
                 self._apply_remote_label_event(action, label)
             elif kind == "license":
                 self._on_license_refresh_result(bool(payload))
+            elif kind == "system_wake":
+                self._handle_system_wake()
         self.root.after(120, self._process_ui_queue)
 
     def _handle_network_payload(self, payload: dict) -> None:
