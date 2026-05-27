@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.62"
+APP_VERSION = "1.0.63"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -529,6 +529,32 @@ def now_str_short() -> str:
     connection diagnostic log and the peer-message envelope where second-
     precision is still useful for debugging."""
     return datetime.now().strftime("%I:%M %p")
+
+
+def _migrate_old_log_line(text: str) -> str:
+    """Rewrite a pre-1.0.62 Ready-log line ('[02:30 PM] Body') to the new
+    layout ('Body  [02:30 PM]'). Returns text unchanged if it isn't in the
+    old layout, so new-format lines (which never start with '[') and any
+    unrecognized input pass through untouched.
+
+    Used by _load_ready_log to migrate today's persisted entries on the fly
+    when the user first launches a 1.0.62+ build — the on-disk file is not
+    rewritten, so this re-runs once per launch until midnight wipes the file
+    and the day's first new entry starts the new-format era. Cheap enough
+    that re-running is fine."""
+    if not text.startswith("["):
+        return text
+    bracket_end = text.find("] ")
+    if bracket_end < 0:
+        return text
+    ts = text[1:bracket_end]
+    body = text[bracket_end + 2:]
+    # Sanity check: the captured "timestamp" should look like a clock value.
+    # Anything weirder (an opening bracket somewhere unexpected, an empty
+    # body) is left alone rather than reformatted into garbage.
+    if not ts or not body:
+        return text
+    return f"{body}  [{ts}]"
 
 
 def _strip_seconds_from_ts(ts: str) -> str:
@@ -4334,13 +4360,20 @@ class ChairsideReadyAlertApp:
             if line.startswith("IN\t"):
                 # Incoming — replay through the emphasis path with no flash
                 # animation and no re-persist (we're loading from disk).
+                # _migrate_old_log_line is a no-op for new-format lines and
+                # reorders pre-1.0.62 '[ts] body' entries into 'body  [ts]'
+                # so the timestamp displays on the right consistently even
+                # for today's data persisted before the upgrade.
                 self._append_incoming_ready_log(
-                    line[len("IN\t"):], animate=False, persist=False,
+                    _migrate_old_log_line(line[len("IN\t"):]),
+                    animate=False, persist=False,
                 )
             elif line.startswith("OUT\t"):
                 # Outgoing — replay through the same insert-above-emphasis
                 # path that the live send uses, but skip re-persisting.
-                self._append_ready_log(line[len("OUT\t"):], persist=False)
+                self._append_ready_log(
+                    _migrate_old_log_line(line[len("OUT\t"):]), persist=False,
+                )
             else:
                 # Legacy v1.0.38 row (no prefix) — best-effort plain insert,
                 # tagged row_plain so it lines up with everything else.
