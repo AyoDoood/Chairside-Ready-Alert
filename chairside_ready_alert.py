@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.61"
+APP_VERSION = "1.0.62"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -3452,11 +3452,23 @@ class ChairsideReadyAlertApp:
         #                   new Ready arrives. Tk text-tag attributes merge, so
         #                   recent1's font/foreground stick while the flash bg
         #                   smoothly fades out.
-        # Since 1.0.61 all three tags apply ONLY to the "Sender: Ready" body of
-        # the line, not the "[hh:mm AP] " timestamp prefix. The timestamp keeps
-        # the log's default 10pt across every tier so the time columns line up
-        # consistently regardless of which line is most-recent. See
-        # _append_incoming_ready_log for the body_offset computation.
+        # Since 1.0.61 all three font tags apply ONLY to the "Sender: Ready"
+        # body of the line, not the "  [hh:mm AP]" timestamp suffix. The
+        # timestamp keeps the log's default 10pt across every tier so the
+        # time column lines up consistently regardless of which line is
+        # most-recent. See _append_incoming_ready_log for the body-range
+        # computation.
+        #
+        # Since 1.0.62 every inserted line ALSO carries one of three row
+        # tags — row_recent1, row_recent2, or row_plain — applied to the
+        # WHOLE line. The row tag's spacing1 / spacing3 pads smaller-font
+        # lines vertically up to the height of the largest tier so the gap
+        # between any two adjacent lines feels identical to the eye
+        # regardless of which tier they belong to. row_recent1 itself adds
+        # zero padding because it already IS the tallest tier. Padding is
+        # computed from each font's `linespace` metric at theme-apply time
+        # so the values remain correct on systems that substitute a fallback
+        # font with a different metric.
         # Re-configured on every theme change. Bumping the animation sequence
         # aborts any in-flight flash that captured the old colors.
         if hasattr(self, "log"):
@@ -3476,6 +3488,42 @@ class ChairsideReadyAlertApp:
             # in-flight animation will see the seq bump and abandon its frames.
             self.log.tag_configure("recent1_flash", background=log_bg)
             self._recent1_anim_seq = getattr(self, "_recent1_anim_seq", 0) + 1
+
+            # ---- row_* tags: equalize per-line height across font tiers ----
+            try:
+                f_r1 = tkfont.Font(root=self.root, font=_ttk_font(15, "bold"))
+                f_r2 = tkfont.Font(root=self.root, font=_ttk_font(12, "bold"))
+                f_pl = tkfont.Font(root=self.root, font=_ui_font(10))
+                ls_target = f_r1.metrics("linespace")
+                pad_r2 = max(0, ls_target - f_r2.metrics("linespace"))
+                pad_pl = max(0, ls_target - f_pl.metrics("linespace"))
+            except Exception:
+                # If tkfont measurement fails, fall back to zero padding;
+                # visual reverts to the 1.0.61 look (line heights vary by
+                # font size) but nothing crashes — Ready messages still
+                # render and emphasize correctly.
+                pad_r2 = 0
+                pad_pl = 0
+            # Split each pad value half above the line, half below, so each
+            # line stays vertically centered inside its allotted height
+            # instead of leaning toward a top or bottom edge. Odd remainders
+            # go on spacing3 (below).
+            r2_top, r2_bot = pad_r2 // 2, pad_r2 - pad_r2 // 2
+            pl_top, pl_bot = pad_pl // 2, pad_pl - pad_pl // 2
+            self.log.tag_configure("row_recent1", spacing1=0, spacing3=0)
+            self.log.tag_configure("row_recent2", spacing1=r2_top, spacing3=r2_bot)
+            self.log.tag_configure("row_plain",   spacing1=pl_top, spacing3=pl_bot)
+            # Lower the row tags below recent1/recent2 so on a line that
+            # carries both a row tag and a font tag, the font option comes
+            # from recent1/recent2 (higher priority) while the spacing
+            # options come from the row tag (the only tag setting them —
+            # Tk falls through unset options to lower-priority tags).
+            try:
+                self.log.tag_lower("row_recent1", "recent1")
+                self.log.tag_lower("row_recent2", "recent1")
+                self.log.tag_lower("row_plain", "recent1")
+            except tk.TclError:
+                pass
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=theme["status"], bg=card, font=_ui_font(9, "bold"))
         if hasattr(self, "duplicate_name_label"):
@@ -4155,7 +4203,16 @@ class ChairsideReadyAlertApp:
 
         self.log.configure(state="normal")
         try:
+            # Anchor before insert so we can tag the just-inserted line range.
+            # row_plain pads a default-font line up to the height of a
+            # recent1 line; see _apply_theme for the spacing math.
+            self.log.mark_set("_outgoing_anchor", insert_at)
+            self.log.mark_gravity("_outgoing_anchor", "left")
             self.log.insert(insert_at, text.rstrip() + "\n")
+            ls = self.log.index("_outgoing_anchor")
+            le = self.log.index("_outgoing_anchor lineend +1c")
+            self.log.mark_unset("_outgoing_anchor")
+            self.log.tag_add("row_plain", ls, le)
             self.log.see("end")
         finally:
             self.log.configure(state="disabled")
@@ -4168,9 +4225,15 @@ class ChairsideReadyAlertApp:
     # On-disk format is a tab-separated text file at <user_data_dir>/ready_log.txt:
     #
     #     DATE:2026-05-16
-    #     IN<TAB>[02:30 PM] Room 1: Ready
-    #     IN<TAB>[02:35 PM] Room 2: Ready
-    #     OUT<TAB>[02:40 PM] Ready → All
+    #     IN<TAB>Room 1: Ready  [02:30 PM]
+    #     IN<TAB>Room 2: Ready  [02:35 PM]
+    #     OUT<TAB>Ready → All  [02:40 PM]
+    #
+    # Before 1.0.62 the timestamp appeared at the start of each line wrapped
+    # in brackets; it now sits at the end so the eye reads "what happened"
+    # before "when." Lines persisted in the old layout still load cleanly
+    # — _append_incoming_ready_log's body detection falls back to tagging
+    # the whole line if it can't find the "  [" body/timestamp separator.
     #
     # The direction prefix (IN / OUT) lets _load_ready_log replay each line
     # through the same code path that handled it live: incoming lines go through
@@ -4279,10 +4342,17 @@ class ChairsideReadyAlertApp:
                 # path that the live send uses, but skip re-persisting.
                 self._append_ready_log(line[len("OUT\t"):], persist=False)
             else:
-                # Legacy v1.0.38 row (no prefix) — best-effort plain insert.
+                # Legacy v1.0.38 row (no prefix) — best-effort plain insert,
+                # tagged row_plain so it lines up with everything else.
                 self.log.configure(state="normal")
                 try:
+                    self.log.mark_set("_legacy_anchor", "end - 1c")
+                    self.log.mark_gravity("_legacy_anchor", "left")
                     self.log.insert("end", line + "\n")
+                    ls = self.log.index("_legacy_anchor")
+                    le = self.log.index("_legacy_anchor lineend +1c")
+                    self.log.mark_unset("_legacy_anchor")
+                    self.log.tag_add("row_plain", ls, le)
                 finally:
                     self.log.configure(state="disabled")
         try:
@@ -4351,14 +4421,25 @@ class ChairsideReadyAlertApp:
         self.log.configure(state="normal")
         try:
             # Demote the existing recent1 → recent2, and clear the prior recent2.
+            # Each tier change swaps two things on the affected line:
+            #   - the body font tag (recent1 → recent2 → none) on the body
+            #     range bounded by the recentN_start / recentN_end marks
+            #   - the row tag (row_recent1 → row_recent2 → row_plain) on
+            #     the WHOLE line, since per-tag spacing1/spacing3 is what
+            #     equalizes line heights across font tiers
             marks = self.log.mark_names()
             if "recent2_start" in marks and "recent2_end" in marks:
                 try:
-                    self.log.tag_remove(
-                        "recent2",
-                        self.log.index("recent2_start"),
-                        self.log.index("recent2_end"),
-                    )
+                    r2s = self.log.index("recent2_start")
+                    r2e = self.log.index("recent2_end")
+                    self.log.tag_remove("recent2", r2s, r2e)
+                    # Swap the row tag for the (now-aging-out) recent2 line.
+                    # Use linestart / lineend to grab the whole line range —
+                    # the body marks only cover the emphasized text.
+                    r2_line_s = self.log.index(f"{r2s} linestart")
+                    r2_line_e = self.log.index(f"{r2s} lineend +1c")
+                    self.log.tag_remove("row_recent2", r2_line_s, r2_line_e)
+                    self.log.tag_add("row_plain", r2_line_s, r2_line_e)
                 except tk.TclError:
                     pass
                 self.log.mark_unset("recent2_start")
@@ -4371,6 +4452,11 @@ class ChairsideReadyAlertApp:
                     self.log.tag_remove("recent1", r1s, r1e)
                     self.log.tag_remove("recent1_flash", r1s, r1e)
                     self.log.tag_add("recent2", r1s, r1e)
+                    # Swap row tag on the WHOLE old-recent1 line.
+                    r1_line_s = self.log.index(f"{r1s} linestart")
+                    r1_line_e = self.log.index(f"{r1s} lineend +1c")
+                    self.log.tag_remove("row_recent1", r1_line_s, r1_line_e)
+                    self.log.tag_add("row_recent2", r1_line_s, r1_line_e)
                     self.log.mark_set("recent2_start", r1s)
                     # 'right' gravity: when _append_ready_log later inserts an
                     # outgoing line AT this mark's position, the mark moves
@@ -4395,33 +4481,40 @@ class ChairsideReadyAlertApp:
             line_end = self.log.index("end - 1c")
             self.log.mark_unset("_insert_anchor")
 
-            # Emphasis is applied to the "Sender: Ready" body only — the
-            # "[hh:mm AP] " timestamp prefix stays at the log's default 10pt
-            # so timestamps line up consistently across recent1, recent2,
-            # and the older plain lines. The text always begins with the
-            # bracketed timestamp ("[02:30 PM] Sender: Ready"); split on
-            # the first "] " and start the emphasis range two characters
-            # later (past the bracket + space). If the prefix can't be
-            # found for any reason (unexpected format / legacy data), fall
-            # back to emphasizing the whole line so the user still sees
-            # the visual hierarchy.
-            prefix_end = text.find("] ")
-            body_offset = prefix_end + 2 if prefix_end >= 0 else 0
-            try:
-                body_start = self.log.index(f"{line_start} + {body_offset}c")
-            except tk.TclError:
-                body_start = line_start
-            self.log.tag_add("recent1", body_start, line_end)
+            # Font emphasis applies to the "Sender: Ready" body only — the
+            # trailing "  [hh:mm AP]" timestamp stays at the log's default
+            # 10pt so timestamps line up consistently across recent1,
+            # recent2, and the older plain lines. The body sits at the
+            # start of the line and ends at the first "  [" separator (two
+            # spaces + bracket). If the separator can't be found (legacy
+            # data from <= 1.0.61 where the timestamp was at the front),
+            # fall back to emphasizing the whole line.
+            separator = "  ["
+            sep_idx = text.find(separator)
+            if sep_idx >= 0:
+                try:
+                    body_end_index = self.log.index(f"{line_start} + {sep_idx}c")
+                except tk.TclError:
+                    body_end_index = line_end
+            else:
+                body_end_index = line_end
+            self.log.tag_add("recent1", line_start, body_end_index)
             # The flash tag tracks the same range. Concentrating the flash
             # on the body matches the eye's focus to the emphasized text;
             # the static timestamp does not need to flash.
-            self.log.tag_add("recent1_flash", body_start, line_end)
-            self.log.mark_set("recent1_start", body_start)
+            self.log.tag_add("recent1_flash", line_start, body_end_index)
+            # Apply the row tag to the WHOLE line so the line's vertical
+            # spacing is governed by row_recent1 (spacing1=spacing3=0),
+            # not the larger widget defaults that pad smaller-font lines
+            # up to the recent1 line height. See _apply_theme for the
+            # spacing math.
+            self.log.tag_add("row_recent1", line_start, line_end)
+            self.log.mark_set("recent1_start", line_start)
             # 'right' gravity: same reasoning as recent2_start above — keeps
             # the mark anchored to the recent1 body even after an outgoing
             # insert that pushes it down.
             self.log.mark_gravity("recent1_start", "right")
-            self.log.mark_set("recent1_end", line_end)
+            self.log.mark_set("recent1_end", body_end_index)
             self.log.mark_gravity("recent1_end", "right")
 
             self.log.see("end")
@@ -4716,7 +4809,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
-        self._append_ready_log(f"[{now_str_short()}] Ready → {', '.join(targets)}")
+        self._append_ready_log(f"Ready → {', '.join(targets)}  [{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -4737,7 +4830,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
             return
         client.send_chat(["ALL"], message)
-        self._append_ready_log(f"[{now_str_short()}] Ready → All")
+        self._append_ready_log(f"Ready → All  [{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def _maybe_trigger_whimsy(self) -> None:
@@ -4851,7 +4944,7 @@ class ChairsideReadyAlertApp:
                 if self._is_locked_out():
                     self._append_diag(f"Incoming Ready from {sender} dropped: trial expired (purchase to re-enable).")
                     return
-                self._append_incoming_ready_log(f"[{ts}] {sender}: Ready")
+                self._append_incoming_ready_log(f"{sender}: Ready  [{ts}]")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
                 self._focus_and_alert_main_window(alert_sound=alert_sound, alert_volume=int(self.alert_volume_var.get()))
 
