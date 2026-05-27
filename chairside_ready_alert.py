@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.64"
+APP_VERSION = "1.0.65"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -532,19 +532,33 @@ def now_str_short() -> str:
 
 
 def _migrate_old_log_line(text: str) -> str:
-    """Normalize a Ready-log line to the 1.0.64 canonical form 'body\\t[ts]'.
+    """Normalize a Ready-log line to the 1.0.65 canonical form
+    '\\tbody\\t[ts]'.
 
-    Handles three input shapes:
-      - Pre-1.0.62 ('[ts] body')        → 'body\\t[ts]'
-      - 1.0.62 ('body  [ts]', 2 spaces) → 'body\\t[ts]'
-      - 1.0.64+ ('body\\t[ts]')         → unchanged
-      - Anything unrecognized           → unchanged pass-through
+    The leading tab triggers the center tab stop the widget is configured
+    with, so the body centers on the widget's vertical midline regardless
+    of font tier. The second tab triggers the right tab stop, which
+    right-aligns the timestamp into a clean column just past the widest
+    body's right edge.
 
-    Used by _load_ready_log on the persisted ready_log.txt file. The on-disk
-    file is intentionally not rewritten — the migration runs on every launch
-    on whatever pre-canonical lines remain in today's file. Cheap, and avoids
-    rewrite-during-load edge cases. Tomorrow's file (after midnight rollover)
-    is uniformly canonical from the start."""
+    Handles four input shapes:
+      - Pre-1.0.62 ('[ts] body')           → '\\tbody\\t[ts]'
+      - 1.0.62 ('body  [ts]', 2 spaces)    → '\\tbody\\t[ts]'
+      - 1.0.64 ('body\\t[ts]', no leading) → '\\tbody\\t[ts]'
+      - 1.0.65+ ('\\tbody\\t[ts]')         → unchanged
+      - Anything unrecognized              → unchanged pass-through
+
+    Used by _load_ready_log on the persisted ready_log.txt file. The on-
+    disk file is intentionally not rewritten — the migration runs on every
+    launch on whatever pre-canonical lines remain in today's file. Cheap,
+    and avoids rewrite-during-load edge cases. Tomorrow's file (after
+    midnight rollover) is uniformly canonical from the start."""
+    # Already canonical (1.0.65+): leading tab → leave alone.
+    if text.startswith("\t"):
+        return text
+    # 1.0.64 layout: 'body\t[ts]' (no leading tab). Just prepend a tab.
+    if "\t[" in text:
+        return "\t" + text
     # Pre-1.0.62 layout: '[ts] body'.
     if text.startswith("["):
         bracket_end = text.find("] ")
@@ -552,17 +566,18 @@ def _migrate_old_log_line(text: str) -> str:
             ts = text[1:bracket_end]
             body = text[bracket_end + 2:]
             if ts and body:
-                return f"{body}\t[{ts}]"
+                return f"\t{body}\t[{ts}]"
         return text
     # 1.0.62 layout: 'body  [ts]'. The double-space separator was a
-    # transition-period choice that 1.0.64 replaced with a tab so the
-    # right-aligned tab stop can column-align all timestamps.
+    # transition-period choice; replaced with tabs in 1.0.64+ so tab
+    # stops can column-align both the body (centered) and timestamp
+    # (right-aligned).
     sep_idx = text.find("  [")
     if sep_idx >= 0:
         body = text[:sep_idx]
         rest = text[sep_idx + 2:]  # includes the '['
         if body and rest.startswith("[") and rest.endswith("]"):
-            return f"{body}\t{rest}"
+            return f"\t{body}\t{rest}"
     return text
 
 
@@ -1489,6 +1504,15 @@ class ChairsideReadyAlertApp:
         self._diag_win: Optional[tk.Toplevel] = None
         self._diag_text: Optional[tk.Text] = None
         self._tray_diag_lines: deque[str] = deque(maxlen=300)
+        # Ready Messages log layout state — see _refresh_log_tabstop and
+        # _refresh_separators. _max_body_width_px tracks the widest body
+        # currently displayed (in pixels) so the right tab stop can sit
+        # just past it; resets on midnight rollover. _separator_frames
+        # tracks the embedded tk.Frame widgets used as inter-line
+        # separators so they can be destroyed and rebuilt as the log
+        # mutates.
+        self._max_body_width_px: int = 0
+        self._separator_frames: list[tk.Frame] = []
         self._tray_diag_win: Optional[tk.Toplevel] = None
         self._tray_diag_text: Optional[tk.Text] = None
         # T+25s post-start sentinel that surfaces a help dialog when no LAN
@@ -3706,14 +3730,17 @@ class ChairsideReadyAlertApp:
         self._log_panel.pack(fill="both", expand=True, pady=(8, 0))
         self.log = self._log_panel.log
         self.log.configure(state="disabled")
-        # Right-justify timestamps: every log line uses '\t' between body
-        # and "[hh:mm AP]"; the tab stop is repositioned on every Configure
-        # event so it tracks the right edge of the visible log area as the
-        # window resizes. See _refresh_log_tabstop for the math.
-        self.log.bind("<Configure>", self._refresh_log_tabstop)
-        # Run once now so the first batch of restored / fresh entries also
-        # gets the right-aligned tab stop instead of falling back to Tk's
-        # default 8-space tab width.
+        # Each log line uses two tab stops: tab 1 (center) centers the
+        # "Sender: Ready" body on the widget's vertical midline so smaller-
+        # font tiers sit centered under the larger ones; tab 2 (right)
+        # right-aligns "[hh:mm AP]" just past the widest body's right edge.
+        # Both stops are recomputed in _refresh_log_tabstop and tracked on
+        # window resize. _refresh_separator_widths keeps the embedded
+        # separator frames matching the current widget width.
+        def _on_log_configure(event):
+            self._refresh_log_tabstop(event)
+            self._refresh_separator_widths(event)
+        self.log.bind("<Configure>", _on_log_configure)
         self.root.after_idle(self._refresh_log_tabstop)
 
         # Ready button card (layout_preview: .ready-wrap centered, .ready-b ~80% width)
@@ -4216,29 +4243,190 @@ class ChairsideReadyAlertApp:
             self.targets_frame.grid_columnconfigure(column, weight=1)
         self._rebuild_default_menu()
 
-    def _refresh_log_tabstop(self, _event: object = None) -> None:
-        """Reposition the log widget's right-aligned tab stop so every line's
-        timestamp ('\\t[hh:mm AP]') is right-justified near the right edge of
-        the visible log area.
+    def _note_body_width(self, body_text: str, font_spec) -> None:
+        """Update the running maximum body pixel width used by the right tab
+        stop, taking the measurement in the font this body actually renders
+        in (15pt bold for recent1, 12pt bold for recent2, 10pt default for
+        plain / outgoing). The tab stop is then re-aligned via
+        _refresh_log_tabstop so the timestamp column sits just past the
+        widest body's right edge regardless of which tier it came from.
 
-        Bound to the log's <Configure> event so window resizes keep the tab
-        stop tracking the current widget width. The 12-px inset keeps the
-        timestamps from kissing the widget border or scrollbar. Falls back
-        silently on TclError (e.g., widget destroyed mid-resize)."""
+        Monotonic-grow on purpose: shrinking the column when a long body
+        scrolls off would look jittery. The max is reset only on midnight
+        rollover (see _check_log_rollover)."""
+        if not body_text:
+            return
+        try:
+            f = tkfont.Font(root=self.root, font=font_spec)
+            w = f.measure(body_text)
+        except Exception:
+            return
+        if w > getattr(self, "_max_body_width_px", 0):
+            self._max_body_width_px = w
+            self._refresh_log_tabstop()
+
+    def _refresh_log_tabstop(self, _event: object = None) -> None:
+        """Configure the log widget's two tab stops:
+
+          tab 1 (center): centers the body around the widget's vertical
+                          midline so smaller-font lines sit centered under
+                          the larger ones (15pt bold recent1 is the
+                          biggest; 12pt bold recent2 and 10pt plain center
+                          on the same midline beneath it).
+
+          tab 2 (right):  right-aligns "[hh:mm AP]" just past the widest
+                          body's right edge plus a small gap, so the
+                          timestamp column sits close to the bodies rather
+                          than way out at the widget edge. Position is
+                          (center_x + max_body_width/2 + ts_width + gap),
+                          measured by _note_body_width on every insertion.
+
+        Bound to the log's <Configure> so window resizes keep both tab
+        stops tracking the current widget width. Falls back silently on
+        TclError (widget destroyed mid-resize)."""
         try:
             width = self.log.winfo_width()
         except tk.TclError:
             return
         if width <= 1:
-            # Widget not realized yet; nothing useful to compute. The
-            # after_idle reschedule in _build_ui will catch us on the next
-            # paint pass.
-            return
-        tab_px = max(40, width - 12)
+            return  # widget not realized yet
+        center_x = width / 2
+        max_body = float(getattr(self, "_max_body_width_px", 0))
+        # Estimate timestamp text width once per call (cheap; the string is
+        # short). Use a representative "[12:34 AM]" so the measure is the
+        # widest plausible value across the day.
         try:
-            self.log.configure(tabs=(tab_px, "right"))
+            ts_font = tkfont.Font(root=self.root, font=_ui_font(10))
+            ts_w = ts_font.measure("[12:34 AM]")
+        except Exception:
+            ts_w = 80
+        gap = 20
+        # Position the right tab past where the widest body's right edge
+        # would land when centered. Clamp to widget width so the tab stop
+        # never falls off-screen on a narrow window.
+        tab2_x = center_x + max_body / 2 + ts_w + gap
+        tab2_x = min(tab2_x, max(80, width - 8))
+        try:
+            self.log.configure(tabs=(int(center_x), "center", int(tab2_x), "right"))
         except tk.TclError:
             pass
+        # Tab stop changed → separator widths may need refreshing too.
+        self._refresh_separator_widths()
+
+    def _refresh_separators(self) -> None:
+        """Rebuild the thin gray separator lines between adjacent log
+        entries. Called after every mutation that adds or removes a Ready-
+        log entry (incoming, outgoing, replay). Idempotent.
+
+        Each separator is a tk.Frame embedded via text.window_create on
+        its own display line; the line is also tagged "_separator_row"
+        so we can find and delete the whole line on the next rebuild
+        (which auto-destroys the embedded frame).
+
+        Entry lines are identified by carrying one of the row_* tags
+        (row_recent1, row_recent2, row_plain). Walking the lines is cheap
+        at the sizes this log ever reaches before the daily rollover."""
+        self.log.configure(state="normal")
+        try:
+            # 1. Delete every existing separator row. Deleting the text
+            #    range that holds the window-char auto-destroys the
+            #    embedded tk.Frame (per Tk text widget semantics); just
+            #    calling sep.destroy() would leave the window-char's
+            #    position in the text as an empty blank line.
+            ranges = self.log.tag_ranges("_separator_row")
+            pairs = [(str(ranges[i]), str(ranges[i + 1]))
+                     for i in range(0, len(ranges), 2)]
+            for start, end in reversed(pairs):
+                try:
+                    self.log.delete(start, end)
+                except tk.TclError:
+                    pass
+            self._separator_frames.clear()
+
+            # 2. Collect entry line indices by walking top-to-bottom.
+            try:
+                end_index = self.log.index("end - 1c")
+                last_line = int(end_index.split(".")[0])
+            except (tk.TclError, ValueError, AttributeError):
+                return
+            entry_lines: list[int] = []
+            for line_num in range(1, last_line + 1):
+                line_start = f"{line_num}.0"
+                try:
+                    names = self.log.tag_names(line_start)
+                except tk.TclError:
+                    continue
+                if any(t in names for t in ("row_recent1", "row_recent2", "row_plain")):
+                    entry_lines.append(line_num)
+            if len(entry_lines) <= 1:
+                return  # zero or one entries — nothing to separate
+
+            # 3. Insert a separator between each adjacent pair of entries,
+            #    walking right-to-left so insertions don't shift the line
+            #    indices we still need. Each separator is a one-line row
+            #    with a window-character + trailing newline; both chars
+            #    carry the "_separator_row" tag for later cleanup.
+            sep_width = self._current_separator_width()
+            sep_color = self._current_separator_color()
+            for i in range(len(entry_lines) - 1, 0, -1):
+                upper_line = entry_lines[i - 1]
+                lower_line = entry_lines[i]
+                # After the cleanup step above, entries should be on
+                # consecutive lines; guard anyway in case a stray non-
+                # entry line snuck in.
+                if lower_line - upper_line != 1:
+                    continue
+                insert_at = f"{lower_line}.0"
+                try:
+                    sep = tk.Frame(self.log, bg=sep_color, height=1, width=sep_width)
+                    # Insert newline first to grow the widget by one line,
+                    # then drop the window-char at the start of that new
+                    # line. After both inserts: line `lower_line` =
+                    # [window_char][newline], and the original lower line
+                    # content has shifted down to lower_line + 1.
+                    self.log.insert(insert_at, "\n")
+                    self.log.window_create(insert_at, window=sep, padx=12, pady=3)
+                    # Tag both the window-char and the newline so the
+                    # whole row deletes cleanly on the next rebuild.
+                    self.log.tag_add(
+                        "_separator_row",
+                        insert_at,
+                        f"{insert_at} + 2c",
+                    )
+                    self._separator_frames.append(sep)
+                except tk.TclError:
+                    try:
+                        sep.destroy()  # type: ignore[unbound-local-variable]
+                    except Exception:
+                        pass
+        finally:
+            self.log.configure(state="disabled")
+
+    def _current_separator_width(self) -> int:
+        try:
+            return max(40, self.log.winfo_width() - 36)
+        except tk.TclError:
+            return 400
+
+    def _current_separator_color(self) -> str:
+        # Subtle gray that reads on every theme's log background. Themes
+        # already define a 'sub' (secondary text) color in roughly this
+        # neighborhood; fall back to a fixed light gray when unavailable.
+        try:
+            return self._current_theme.get("card_border") or "#cccccc"
+        except Exception:
+            return "#cccccc"
+
+    def _refresh_separator_widths(self, _event: object = None) -> None:
+        """Update widths of existing separator widgets to match the current
+        log widget width. Called on Configure events; cheap (no widget
+        creation/destruction)."""
+        w = self._current_separator_width()
+        for f in self._separator_frames:
+            try:
+                f.configure(width=w)
+            except Exception:
+                pass
 
     def _append_diag(self, text: str) -> None:
         line = f"[{now_str()}] {text}"
@@ -4281,9 +4469,21 @@ class ChairsideReadyAlertApp:
             le = self.log.index("_outgoing_anchor lineend +1c")
             self.log.mark_unset("_outgoing_anchor")
             self.log.tag_add("row_plain", ls, le)
+            # Track the outgoing body width too so the right tab stop
+            # accommodates 'Ready → <long target list>' just as it does
+            # for incoming bodies.
+            try:
+                first_tab = text.find("\t")
+                second_tab = text.find("\t", first_tab + 1) if first_tab >= 0 else -1
+                if first_tab >= 0 and second_tab >= 0:
+                    self._note_body_width(text[first_tab + 1:second_tab], _ui_font(10))
+            except Exception:
+                pass
             self.log.see("end")
         finally:
             self.log.configure(state="disabled")
+
+        self._refresh_separators()
 
         if persist:
             self._persist_ready_log_line(text, direction="OUT")
@@ -4437,6 +4637,11 @@ class ChairsideReadyAlertApp:
             self.log.see("end")
         except tk.TclError:
             pass
+        # Restored entries are inserted via the same paths as live ones,
+        # but each path's individual _refresh_separators() call accumulated
+        # an O(n^2) cost across the load. A single rebuild at the end is
+        # cheaper and produces the same final state.
+        self._refresh_separators()
 
     def _check_log_rollover(self) -> None:
         """Periodic (every 60s) check that the in-memory log + persistent file
@@ -4459,6 +4664,17 @@ class ChairsideReadyAlertApp:
                         self.log.mark_unset(name)
                     except tk.TclError:
                         pass
+                # Destroy any leftover separator widgets and reset the
+                # monotonic body-width cap so tomorrow's narrower bodies
+                # don't sit under yesterday's wider tab stop.
+                for sep in list(self._separator_frames):
+                    try:
+                        sep.destroy()
+                    except Exception:
+                        pass
+                self._separator_frames.clear()
+                self._max_body_width_px = 0
+                self._refresh_log_tabstop()
                 # Wipe the persistent file — next append will rewrite the header.
                 try:
                     os.remove(self._ready_log_path())
@@ -4560,35 +4776,45 @@ class ChairsideReadyAlertApp:
             self.log.mark_unset("_insert_anchor")
 
             # Font emphasis applies to the "Sender: Ready" body only — the
-            # trailing "\t[hh:mm AP]" timestamp stays at the log's default
-            # 10pt so timestamps line up consistently across recent1,
-            # recent2, and the older plain lines. The body sits at the
-            # start of the line and ends at the tab character (which is
-            # also where the right-aligned tab stop floats the timestamp
-            # to the right edge of the widget — see _refresh_log_tabstop).
-            # If the separator can't be found (legacy data from <= 1.0.61
-            # where the timestamp was at the front of the line), fall back
-            # to emphasizing the whole line.
-            sep_idx = text.find("\t")
-            if sep_idx >= 0:
+            # leading "\t" centers the body on the center tab stop, and
+            # the trailing "\t[hh:mm AP]" right-aligns the timestamp at
+            # the second tab stop. Both tab stops are managed by
+            # _refresh_log_tabstop. The body's range is everything
+            # between the first and second tabs; tagging body-only keeps
+            # the timestamp at the log's default 10pt across every tier.
+            # If the separators can't be found (legacy data), fall back
+            # to emphasizing whatever's after the line's start.
+            first_tab = text.find("\t")
+            second_tab = text.find("\t", first_tab + 1) if first_tab >= 0 else -1
+            if first_tab >= 0 and second_tab >= 0:
                 try:
-                    body_end_index = self.log.index(f"{line_start} + {sep_idx}c")
+                    body_start_index = self.log.index(f"{line_start} + {first_tab + 1}c")
+                    body_end_index = self.log.index(f"{line_start} + {second_tab}c")
+                except tk.TclError:
+                    body_start_index = line_start
+                    body_end_index = line_end
+            elif first_tab >= 0:
+                # Only one tab — assume the body is everything before it.
+                try:
+                    body_start_index = line_start
+                    body_end_index = self.log.index(f"{line_start} + {first_tab}c")
                 except tk.TclError:
                     body_end_index = line_end
             else:
+                body_start_index = line_start
                 body_end_index = line_end
-            self.log.tag_add("recent1", line_start, body_end_index)
+            self.log.tag_add("recent1", body_start_index, body_end_index)
             # The flash tag tracks the same range. Concentrating the flash
             # on the body matches the eye's focus to the emphasized text;
             # the static timestamp does not need to flash.
-            self.log.tag_add("recent1_flash", line_start, body_end_index)
+            self.log.tag_add("recent1_flash", body_start_index, body_end_index)
             # Apply the row tag to the WHOLE line so the line's vertical
             # spacing is governed by row_recent1 (spacing1=spacing3=0),
             # not the larger widget defaults that pad smaller-font lines
             # up to the recent1 line height. See _apply_theme for the
             # spacing math.
             self.log.tag_add("row_recent1", line_start, line_end)
-            self.log.mark_set("recent1_start", line_start)
+            self.log.mark_set("recent1_start", body_start_index)
             # 'right' gravity: same reasoning as recent2_start above — keeps
             # the mark anchored to the recent1 body even after an outgoing
             # insert that pushes it down.
@@ -4596,9 +4822,22 @@ class ChairsideReadyAlertApp:
             self.log.mark_set("recent1_end", body_end_index)
             self.log.mark_gravity("recent1_end", "right")
 
+            # Update the running maximum body pixel width so the right tab
+            # stop sits just past the widest body across all currently
+            # displayed lines. Uses the 15pt-bold metric for the new
+            # recent1 body and falls back gracefully if measurement fails.
+            try:
+                body_text = text[first_tab + 1:second_tab] if first_tab >= 0 and second_tab >= 0 else text
+                self._note_body_width(body_text, _ttk_font(15, "bold"))
+            except Exception:
+                pass
+
             self.log.see("end")
         finally:
             self.log.configure(state="disabled")
+
+        # Rebuild separator widgets between adjacent log entries.
+        self._refresh_separators()
 
         if animate:
             self._animate_recent1_flash()
@@ -4888,7 +5127,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
-        self._append_ready_log(f"Ready → {', '.join(targets)}\t[{now_str_short()}]")
+        self._append_ready_log(f"\tReady → {', '.join(targets)}\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -4909,7 +5148,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
             return
         client.send_chat(["ALL"], message)
-        self._append_ready_log(f"Ready → All\t[{now_str_short()}]")
+        self._append_ready_log(f"\tReady → All\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def _maybe_trigger_whimsy(self) -> None:
@@ -5023,7 +5262,7 @@ class ChairsideReadyAlertApp:
                 if self._is_locked_out():
                     self._append_diag(f"Incoming Ready from {sender} dropped: trial expired (purchase to re-enable).")
                     return
-                self._append_incoming_ready_log(f"{sender}: Ready\t[{ts}]")
+                self._append_incoming_ready_log(f"\t{sender}: Ready\t[{ts}]")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
                 self._focus_and_alert_main_window(alert_sound=alert_sound, alert_volume=int(self.alert_volume_var.get()))
 
