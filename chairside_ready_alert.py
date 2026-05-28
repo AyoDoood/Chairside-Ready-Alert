@@ -121,7 +121,13 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.71"
+APP_VERSION = "1.0.72"
+
+# Maximum number of Ready-log entries shown in the widget. Older entries
+# are dropped from the display (still kept in ready_log.txt for the day).
+# Set to a small number so the user never has to scroll the log -- the
+# most recent N is what matters; longer history lives on disk only.
+MAX_VISIBLE_LOG_ENTRIES = 6
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -1316,11 +1322,22 @@ class RoundedLogPanel(tk.Frame):
         self._border = border
         self._card_bg = card_bg
         self._r = radius
-        self._inset = 2
+        # _inset=0 (previously 2) lets the log Text widget reach the very
+        # edges of the panel canvas. Since 1.0.70 removed the panel's own
+        # border, the inset no longer needs to keep the log content away
+        # from a visible outline -- and zeroing it removes the last 2px
+        # of indent between the body's first character and the "Ready
+        # Messages" header above the log.
+        self._inset = 0
 
         self._cv = tk.Canvas(self, highlightthickness=0, bd=0, bg=card_bg)
         self._cv.pack(fill="both", expand=True)
 
+        # padx=0 (not the previous 6) so the body's leftmost character
+        # aligns with the "Ready Messages" header above the log instead
+        # of sitting ~10px to the right of it. Combined with _inset=0
+        # and left_x=0 in _refresh_log_tabstop, the body's first char
+        # lands at the very left edge of the panel.
         self.log = tk.Text(
             self._cv,
             height=height_lines,
@@ -1328,7 +1345,7 @@ class RoundedLogPanel(tk.Frame):
             relief="flat",
             borderwidth=0,
             highlightthickness=0,
-            padx=6,
+            padx=0,
             pady=4,
             bg=log_bg,
             fg=log_fg,
@@ -4341,7 +4358,11 @@ class ChairsideReadyAlertApp:
             return
         if width <= 1:
             return  # widget not realized yet
-        left_x = 4
+        # left_x=0 (previously 4) so the body lands at content_x=0, which
+        # combined with log padx=0 and RoundedLogPanel _inset=0 puts the
+        # body's leftmost character flush with the "Ready Messages"
+        # header above the log.
+        left_x = 0
         max_body = float(getattr(self, "_max_body_width_px", 0))
         # Estimate timestamp text width once per call (cheap; the string is
         # short). Use a representative "[12:34 AM]" so the measure is the
@@ -4440,7 +4461,13 @@ class ChairsideReadyAlertApp:
                     # [window_char][newline], and the original lower line
                     # content has shifted down to lower_line + 1.
                     self.log.insert(insert_at, "\n")
-                    self.log.window_create(insert_at, window=sep, padx=12, pady=3)
+                    # padx=8 (previously 12) so the separator's left edge
+                    # sits 8px to the right of the body's left edge --
+                    # mirroring the 8px gap on the right side (separator
+                    # ends 8px left of the timestamp's right edge). With
+                    # the body now at content_x=0 (vs the old 4),
+                    # window_create padx=8 yields sep at content_x=8.
+                    self.log.window_create(insert_at, window=sep, padx=8, pady=3)
                     # Tag both the window-char and the newline so the
                     # whole row deletes cleanly on the next rebuild.
                     self.log.tag_add(
@@ -4463,23 +4490,22 @@ class ChairsideReadyAlertApp:
         # the timestamp" -- mirroring the left side where it ends "just
         # inside the leftmost body character."
         #
-        # Geometry in content coordinates:
-        #   body left edge   = left_x (4) -- set in _refresh_log_tabstop
-        #   sep  left edge   = 12        -- window_create padx=12 in
+        # Geometry in content coordinates (as of 1.0.72):
+        #   body left edge   = left_x (0) -- set in _refresh_log_tabstop
+        #   sep  left edge   = 8         -- window_create padx=8 in
         #                                   _refresh_separators
         #   ts   right edge  = tab2_x    -- right tab stop, cached as
         #                                   self._right_tab_x
         #
-        # The left side sits (12 - 4 = 8)px to the right of the body's
-        # first character, which the user describes as "just inside the
-        # R in Room." To mirror that on the right side, the separator's
-        # right edge should sit 8px to the left of the timestamp's right
-        # edge -- i.e. at tab2_x - 8. Since the separator's own left edge
-        # is at content_x = 12, the width is (tab2_x - 8) - 12 = tab2_x -
-        # 20.
+        # The left side sits 8px to the right of the body's first
+        # character (sep at 8, body at 0). To mirror that on the right
+        # side, the separator's right edge should sit 8px to the left
+        # of the timestamp's right edge -- i.e. at tab2_x - 8. With the
+        # separator's own left edge at content_x = 8, the width is
+        # (tab2_x - 8) - 8 = tab2_x - 16.
         tab2_x = getattr(self, "_right_tab_x", 0.0)
         if tab2_x > 60:
-            return max(40, int(tab2_x) - 20)
+            return max(40, int(tab2_x) - 16)
         # Fallback for very-early init before _refresh_log_tabstop has
         # run -- keep close to the old behavior so the first paint is
         # not jarringly different.
@@ -4506,6 +4532,50 @@ class ChairsideReadyAlertApp:
                 f.configure(width=w)
             except Exception:
                 pass
+
+    def _trim_log_to_max_entries(self) -> None:
+        """Drop the oldest log entries from the WIDGET so at most
+        MAX_VISIBLE_LOG_ENTRIES remain. Idempotent.
+
+        Called after every insert (incoming, outgoing) and once after the
+        replay-on-launch loop finishes. Persistence (ready_log.txt) is NOT
+        trimmed -- the on-disk record stays complete for the day; only
+        the visible widget is capped to avoid a scroll-queue UX where
+        older entries pile up off-screen.
+
+        Identifies entries by their row_* tags (row_recent1 / row_recent2
+        / row_plain). Walks lines top-to-bottom; if entry count exceeds
+        the cap, deletes the entire buffer range from line 1 up to the
+        start of the (count - cap + 1)th entry. That single deletion
+        removes the excess oldest entries plus any separator lines
+        sandwiched between them. _refresh_separators is then called to
+        rebuild dividers between whatever survived."""
+        self.log.configure(state="normal")
+        deleted = False
+        try:
+            try:
+                end_index = self.log.index("end - 1c")
+                last_line = int(end_index.split(".")[0])
+            except (tk.TclError, ValueError, AttributeError):
+                return
+            entry_lines: list[int] = []
+            for line_num in range(1, last_line + 1):
+                line_start = f"{line_num}.0"
+                try:
+                    names = self.log.tag_names(line_start)
+                except tk.TclError:
+                    continue
+                if any(t in names for t in ("row_recent1", "row_recent2", "row_plain")):
+                    entry_lines.append(line_num)
+            if len(entry_lines) <= MAX_VISIBLE_LOG_ENTRIES:
+                return
+            first_keeper = entry_lines[-MAX_VISIBLE_LOG_ENTRIES]
+            self.log.delete("1.0", f"{first_keeper}.0")
+            deleted = True
+        finally:
+            self.log.configure(state="disabled")
+        if deleted:
+            self._refresh_separators()
 
     def _append_diag(self, text: str) -> None:
         line = f"[{now_str()}] {text}"
@@ -4580,6 +4650,7 @@ class ChairsideReadyAlertApp:
             self.log.configure(state="disabled")
 
         self._refresh_separators()
+        self._trim_log_to_max_entries()
 
         if persist:
             self._persist_ready_log_line(text, direction="OUT")
@@ -4738,6 +4809,7 @@ class ChairsideReadyAlertApp:
         # an O(n^2) cost across the load. A single rebuild at the end is
         # cheaper and produces the same final state.
         self._refresh_separators()
+        self._trim_log_to_max_entries()
 
     def _check_log_rollover(self) -> None:
         """Periodic (every 60s) check that the in-memory log + persistent file
@@ -4934,6 +5006,7 @@ class ChairsideReadyAlertApp:
 
         # Rebuild separator widgets between adjacent log entries.
         self._refresh_separators()
+        self._trim_log_to_max_entries()
 
         if animate:
             self._animate_recent1_flash()
