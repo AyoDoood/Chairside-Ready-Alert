@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.70"
+APP_VERSION = "1.0.71"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -4528,11 +4528,28 @@ class ChairsideReadyAlertApp:
         persist=False is used by _load_ready_log when replaying entries on
         startup so we don't re-write to disk on every restored line."""
         # Pick the insert position based on the current emphasis state.
+        #
+        # CRITICAL: use `linestart` on the chosen mark, not the mark itself.
+        # recent1_start / recent2_start point at the *body* start (the char
+        # right after the leading "\t"), not the line start -- they're set
+        # that way because the recent1 / recent2 font tags apply to the body
+        # only (so the timestamp stays at the log's default 10pt). Inserting
+        # text at the mark itself lands *between* the existing line's
+        # leading tab and its body, splitting the line into two malformed
+        # lines: the new outgoing line ends up with TWO leading tabs (its
+        # own plus the inherited one), which routes through the right-
+        # aligned tab2 stop and kicks the body to the timestamp column;
+        # the displaced recent2 line LOSES its leading tab entirely and
+        # renders body-at-x=0. Both symptoms compound on every subsequent
+        # send. Using `linestart` lands the new content at column 0 of the
+        # recent2 line, BEFORE its leading tab -- the inserted "\n" then
+        # splits cleanly into a new whole line for the outgoing entry,
+        # with the original recent2 line shifting down intact.
         marks = self.log.mark_names()
         if "recent2_start" in marks:
-            insert_at = self.log.index("recent2_start")
+            insert_at = self.log.index("recent2_start linestart")
         elif "recent1_start" in marks:
-            insert_at = self.log.index("recent1_start")
+            insert_at = self.log.index("recent1_start linestart")
         else:
             insert_at = "end"
 
