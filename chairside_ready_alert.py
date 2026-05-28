@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.74"
+APP_VERSION = "1.0.75"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -4564,6 +4564,14 @@ class ChairsideReadyAlertApp:
                     continue
                 if any(t in names for t in ("row_recent1", "row_recent2", "row_plain")):
                     entry_lines.append(line_num)
+            # Exclude separator lines: Tk tag-range ends have right-gravity,
+            # so row_* tags on entry lines bleed into the adjacent separator
+            # line when the separator is inserted. Checking _separator_row
+            # first filters those phantom hits out.
+            entry_lines = [
+                n for n in entry_lines
+                if "_separator_row" not in self.log.tag_names(f"{n}.0")
+            ]
             if len(entry_lines) <= MAX_VISIBLE_LOG_ENTRIES:
                 return
             first_keeper = entry_lines[-MAX_VISIBLE_LOG_ENTRIES]
