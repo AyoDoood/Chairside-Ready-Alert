@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.65"
+APP_VERSION = "1.0.66"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -3504,7 +3504,9 @@ class ChairsideReadyAlertApp:
             )
         # Configure the two emphasis tiers for incoming Ready messages.
         # 'recent1'       = newest incoming Ready (15pt bold, theme's darkest color).
-        # 'recent2'       = second-most-recent (12pt bold, same dark color).
+        # 'recent2'       = second-most-recent (10pt normal -- same font and
+        #                   weight as plain/older lines, distinguished from
+        #                   them only by foreground color).
         # 'recent1_flash' = a transient background-highlight tag layered on top of
         #                   recent1. Its background color animates from theme
         #                   'highlight' down to 'log_bg' over ~600ms whenever a
@@ -3540,7 +3542,7 @@ class ChairsideReadyAlertApp:
             )
             self.log.tag_configure(
                 "recent2",
-                font=_ttk_font(12, "bold"),
+                font=_ttk_font(10),
                 foreground=emph_dark,
             )
             # Reset the flash background to the log's normal background. Any
@@ -3551,7 +3553,7 @@ class ChairsideReadyAlertApp:
             # ---- row_* tags: equalize per-line height across font tiers ----
             try:
                 f_r1 = tkfont.Font(root=self.root, font=_ttk_font(15, "bold"))
-                f_r2 = tkfont.Font(root=self.root, font=_ttk_font(12, "bold"))
+                f_r2 = tkfont.Font(root=self.root, font=_ttk_font(10))
                 f_pl = tkfont.Font(root=self.root, font=_ui_font(10))
                 ls_target = f_r1.metrics("linespace")
                 pad_r2 = max(0, ls_target - f_r2.metrics("linespace"))
@@ -4246,8 +4248,9 @@ class ChairsideReadyAlertApp:
     def _note_body_width(self, body_text: str, font_spec) -> None:
         """Update the running maximum body pixel width used by the right tab
         stop, taking the measurement in the font this body actually renders
-        in (15pt bold for recent1, 12pt bold for recent2, 10pt default for
-        plain / outgoing). The tab stop is then re-aligned via
+        in (15pt bold for recent1, 10pt default for recent2 / plain /
+        outgoing -- recent2 shares plain's font and differs only in color).
+        The tab stop is then re-aligned via
         _refresh_log_tabstop so the timestamp column sits just past the
         widest body's right edge regardless of which tier it came from.
 
@@ -4271,8 +4274,8 @@ class ChairsideReadyAlertApp:
           tab 1 (center): centers the body around the widget's vertical
                           midline so smaller-font lines sit centered under
                           the larger ones (15pt bold recent1 is the
-                          biggest; 12pt bold recent2 and 10pt plain center
-                          on the same midline beneath it).
+                          biggest; 10pt recent2 and 10pt plain center on
+                          the same midline beneath it).
 
           tab 2 (right):  right-aligns "[hh:mm AP]" just past the widest
                           body's right edge plus a small gap, so the
