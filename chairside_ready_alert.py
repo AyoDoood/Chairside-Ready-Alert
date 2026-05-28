@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.77"
+APP_VERSION = "1.0.78"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -641,7 +641,7 @@ class ConfigStore:
             "is_server": False,
             "manual_peer_ips": "",
             "alert_sound": ALERT_SOUND_OPTIONS[0],
-            "alert_volume": 70,
+            "alert_volume": 50,
             "custom_station_labels": [],
             # User-editable list of station names available for the Station name
             # combobox and the Defaults menu. Authoritative once present; on first
@@ -3658,7 +3658,7 @@ class ChairsideReadyAlertApp:
         self.label_var = tk.StringVar(value=STATION_NAME_PROMPT)
         self.port_var = tk.StringVar(value=str(DEFAULT_PORT))
         self.alert_sound_var = tk.StringVar(value=ALERT_SOUND_OPTIONS[0])
-        self.alert_volume_var = tk.IntVar(value=70)
+        self.alert_volume_var = tk.IntVar(value=50)
 
         t = self._current_theme
         cbg, abg = t["card_bg"], t["bg"]
@@ -3903,7 +3903,7 @@ class ChairsideReadyAlertApp:
             self.alert_sound_var.set(saved_sound)
         else:
             self.alert_sound_var.set(default_sound)
-        self.alert_volume_var.set(int(data.get("alert_volume", 70)))
+        self.alert_volume_var.set(int(data.get("alert_volume", 50)))
         self.label_combo["values"] = list(self._effective_station_labels())
         self._target_signature = None
         self._last_committed_label = committed_label
@@ -4641,7 +4641,7 @@ class ChairsideReadyAlertApp:
             self.log.mark_unset("_outgoing_anchor")
             self.log.tag_add("row_plain", ls, le)
             # Track the outgoing body width too so the right tab stop
-            # accommodates 'Ready → <long target list>' just as it does
+            # accommodates 'Sent → <long target list>' just as it does
             # for incoming bodies.
             try:
                 first_tab = text.find("\t")
@@ -4674,7 +4674,7 @@ class ChairsideReadyAlertApp:
     #     DATE:2026-05-16
     #     IN<TAB>Room 1: Ready  [02:30 PM]
     #     IN<TAB>Room 2: Ready  [02:35 PM]
-    #     OUT<TAB>Ready → All  [02:40 PM]
+    #     OUT<TAB>Sent → All  [02:40 PM]
     #
     # Before 1.0.62 the timestamp appeared at the start of each line wrapped
     # in brackets; it now sits at the end so the eye reads "what happened"
@@ -4792,9 +4792,14 @@ class ChairsideReadyAlertApp:
             elif line.startswith("OUT\t"):
                 # Outgoing — replay through the same insert-above-emphasis
                 # path that the live send uses, but skip re-persisting.
-                self._append_ready_log(
-                    _migrate_old_log_line(line[len("OUT\t"):]), persist=False,
-                )
+                # 1.0.78 rename: outgoing entries now read "Sent → ..."
+                # instead of "Ready → ...". Rewrite the leading prefix on
+                # load so today's pre-rename persisted lines look consistent
+                # with new ones until the midnight rollover deletes the file.
+                migrated = _migrate_old_log_line(line[len("OUT\t"):])
+                if migrated.startswith("Ready → "):
+                    migrated = "Sent → " + migrated[len("Ready → "):]
+                self._append_ready_log(migrated, persist=False)
             else:
                 # Legacy v1.0.38 row (no prefix) — best-effort plain insert,
                 # tagged row_plain so it lines up with everything else.
@@ -5325,7 +5330,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
-        self._append_ready_log(f"Ready → {', '.join(targets)}\t[{now_str_short()}]")
+        self._append_ready_log(f"Sent → {', '.join(targets)}\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -5346,7 +5351,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
             return
         client.send_chat(["ALL"], message)
-        self._append_ready_log(f"Ready → All\t[{now_str_short()}]")
+        self._append_ready_log(f"Sent → All\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def _maybe_trigger_whimsy(self) -> None:
