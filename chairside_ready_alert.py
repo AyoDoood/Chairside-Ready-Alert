@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.69"
+APP_VERSION = "1.0.70"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -444,7 +444,7 @@ ALERT_SOUND_OPTIONS = [
 THEMES: dict[str, dict] = {
     "Modern Blue": {
         "bg": "#f0f4ff", "card_bg": "#ffffff", "accent": "#2563eb", "accent_text": "#ffffff",
-        "title": "#1e40af", "text": "#1e293b", "sub": "#64748b", "card_border": "#dde6f5",
+        "title": "#1e40af", "text": "#1e293b", "sub": "#64748b", "card_border": "#bdc6d5",
         "log_bg": "#f8faff", "log_text": "#475569", "status": "#16a34a",
         "input_bg": "#f8fafc", "input_border": "#cbd5e1", "slider_track": "#dde6f5",
         # emph_dark: drives the bold/larger color of the most recent incoming
@@ -458,7 +458,7 @@ THEMES: dict[str, dict] = {
     },
     "Sage Clinic": {
         "bg": "#f2f5ee", "card_bg": "#ffffff", "accent": "#4a7c59", "accent_text": "#ffffff",
-        "title": "#2d5a3d", "text": "#2c3e2d", "sub": "#6b8f6c", "card_border": "#d4e4d5",
+        "title": "#2d5a3d", "text": "#2c3e2d", "sub": "#6b8f6c", "card_border": "#b4c4b5",
         "log_bg": "#f7faf7", "log_text": "#5a7a5b", "status": "#2d8a4e",
         "input_bg": "#f7faf7", "input_border": "#c8dfc9", "slider_track": "#c8dfc9",
         "emph_dark": "#1b3a26",
@@ -1260,10 +1260,24 @@ class RoundedCard(tk.Frame):
         if w < 4 or h < 4:
             return
         self._cv.delete("rr")
-        r = min(self._r, w // 2, h // 2)
-        pts = [r, 0,  w-r, 0,  w, 0,  w, r,
-               w, h-r,  w, h,  w-r, h,  r, h,
-               0, h,  0, h-r,  0, r,  0, 0]
+        # Inset the right and bottom edges by 1px so the 1-pixel outline
+        # falls entirely within the canvas. Without the inset, Tk centers
+        # the stroke on the polygon vertex; the half at x=w/y=h is past
+        # the last valid canvas pixel and gets clipped, leaving the right
+        # and bottom borders rendering at half intensity (or invisibly,
+        # depending on theme / DPI). The left and top edges happen to
+        # survive better because the canvas bg often matches the outline
+        # color closely enough to mask the same half-clip. Insetting
+        # makes all four sides render at full strength consistently.
+        # Cost: a 1px gutter on the right and bottom shows the canvas's
+        # own bg (outer_bg), which is the page background -- effectively
+        # invisible against the surrounding layout.
+        right = w - 1
+        bot = h - 1
+        r = min(self._r, right // 2, bot // 2)
+        pts = [r, 0,  right-r, 0,  right, 0,  right, r,
+               right, bot-r,  right, bot,  right-r, bot,  r, bot,
+               0, bot,  0, bot-r,  0, r,  0, 0]
         outline = self._border or ""
         ow = 1 if self._border else 0
         self._cv.create_polygon(pts, smooth=True, fill=self._card_bg,
@@ -3499,8 +3513,10 @@ class ChairsideReadyAlertApp:
         s.map("Preview.TButton",        background=[("active", accent)])
 
         if hasattr(self, "_log_panel"):
+            # border=None -- the outer card border already encloses
+            # this panel (see RoundedLogPanel init in _build_ui).
             self._log_panel.update_theme(
-                theme["log_bg"], theme["log_text"], theme.get("card_border"), theme["card_bg"]
+                theme["log_bg"], theme["log_text"], None, theme["card_bg"]
             )
         # Configure the two emphasis tiers for incoming Ready messages.
         # 'recent1'       = newest incoming Ready (15pt bold, theme's darkest color).
@@ -3730,7 +3746,10 @@ class ChairsideReadyAlertApp:
             right,
             log_bg=t["log_bg"],
             log_fg=t["log_text"],
-            border=cborder or "",
+            # No own border -- the outer RoundedCard's border already
+            # encloses this panel, and drawing a second nested border
+            # was visual noise rather than separation.
+            border="",
             card_bg=cbg,
             font=_ui_font(10),
         )
