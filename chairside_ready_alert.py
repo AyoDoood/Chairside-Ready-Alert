@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.76"
+APP_VERSION = "1.0.77"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -4649,12 +4649,20 @@ class ChairsideReadyAlertApp:
                     self._note_body_width(text[:first_tab], _ui_font(10))
             except Exception:
                 pass
-            self.log.see("end")
         finally:
             self.log.configure(state="disabled")
 
         self._refresh_separators()
         self._trim_log_to_max_entries()
+        # Scroll to bottom AFTER _refresh_separators -- the rebuild inserts a
+        # new separator line above the most-recent entry, shifting it one
+        # line further down. Calling see("end") before the rebuild leaves
+        # the scroll anchored to a position that no longer contains the
+        # newest entry, clipping it just off the bottom of the visible area.
+        try:
+            self.log.see("end")
+        except tk.TclError:
+            pass
 
         if persist:
             self._persist_ready_log_line(text, direction="OUT")
@@ -5013,13 +5021,21 @@ class ChairsideReadyAlertApp:
             except Exception:
                 pass
 
-            self.log.see("end")
         finally:
             self.log.configure(state="disabled")
 
         # Rebuild separator widgets between adjacent log entries.
         self._refresh_separators()
         self._trim_log_to_max_entries()
+        # Scroll to bottom AFTER _refresh_separators -- the rebuild inserts a
+        # new separator line above the newest entry, shifting it one line
+        # further down. Calling see("end") before the rebuild leaves the
+        # scroll anchored to a position that no longer contains the newest
+        # entry, clipping it just off the bottom of the visible area.
+        try:
+            self.log.see("end")
+        except tk.TclError:
+            pass
 
         if animate:
             self._animate_recent1_flash()
