@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.68"
+APP_VERSION = "1.0.69"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -3719,7 +3719,12 @@ class ChairsideReadyAlertApp:
                                       font=_ui_font(9, "bold"))
         self.status_label.pack(anchor="w", pady=(0, 6))
 
-        ttk.Label(right, text="Ready Messages", style="CardTitle.TLabel").pack(anchor="w")
+        # Stored so _set_status_banner_visible can re-pack the (hidden when
+        # peers are online) status banner with `before=` pointing at this
+        # header, keeping the original vertical order on the way back.
+        self._ready_messages_header = ttk.Label(right, text="Ready Messages",
+                                                style="CardTitle.TLabel")
+        self._ready_messages_header.pack(anchor="w")
 
         self._log_panel = RoundedLogPanel(
             right,
@@ -3799,14 +3804,39 @@ class ChairsideReadyAlertApp:
         self._refresh_target_checkboxes([])
 
     def _refresh_lan_status_banner(self) -> None:
-        """Main status line: LAN summary only (not per-socket connect/disconnect noise)."""
+        """Main status line: LAN summary only (not per-socket connect/disconnect noise).
+
+        When peers ARE online the banner is hidden entirely -- the checkbox
+        grid below already lists every online station, so duplicating it
+        here in green text was pure redundancy. The banner remains visible
+        for the not-yet-online states ('Not connected', 'Waiting for other
+        workstations...') because an empty checkbox grid is ambiguous on
+        its own (could mean "no peers yet" OR "network broken")."""
         if not self._network_running:
             self.status_var.set("Not connected")
+            self._set_status_banner_visible(True)
             return
         if self.online_labels:
-            self.status_var.set(f"Online: {', '.join(self.online_labels)}")
+            self._set_status_banner_visible(False)
         else:
             self.status_var.set("Waiting for other workstations…")
+            self._set_status_banner_visible(True)
+
+    def _set_status_banner_visible(self, visible: bool) -> None:
+        if not hasattr(self, "status_label"):
+            return
+        try:
+            is_mapped = bool(self.status_label.winfo_ismapped())
+        except tk.TclError:
+            return
+        if visible and not is_mapped:
+            if hasattr(self, "_ready_messages_header"):
+                self.status_label.pack(anchor="w", pady=(0, 6),
+                                       before=self._ready_messages_header)
+            else:
+                self.status_label.pack(anchor="w", pady=(0, 6))
+        elif not visible and is_mapped:
+            self.status_label.pack_forget()
 
     def _manual_peer_ip_list(self) -> list[str]:
         raw = self.config_store.data.get("manual_peer_ips", "")
