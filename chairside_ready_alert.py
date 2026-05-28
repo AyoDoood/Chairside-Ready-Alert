@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.72"
+APP_VERSION = "1.0.73"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -538,33 +538,33 @@ def now_str_short() -> str:
 
 
 def _migrate_old_log_line(text: str) -> str:
-    """Normalize a Ready-log line to the 1.0.65 canonical form
-    '\\tbody\\t[ts]'.
+    """Normalize a Ready-log line to the 1.0.73 canonical form
+    'body\\t[ts]' (no leading tab).
 
-    The leading tab triggers the center tab stop the widget is configured
-    with, so the body centers on the widget's vertical midline regardless
-    of font tier. The second tab triggers the right tab stop, which
-    right-aligns the timestamp into a clean column just past the widest
-    body's right edge.
+    The tab before [ts] triggers the right-aligned tab stop so the
+    timestamp column sits just past the widest body's right edge.
+    The body itself starts at x=0 in the Text widget with no leading
+    tab character -- that's what aligns it flush with the 'Ready
+    Messages' heading above the log.
 
-    Handles four input shapes:
-      - Pre-1.0.62 ('[ts] body')           → '\\tbody\\t[ts]'
-      - 1.0.62 ('body  [ts]', 2 spaces)    → '\\tbody\\t[ts]'
-      - 1.0.64 ('body\\t[ts]', no leading) → '\\tbody\\t[ts]'
-      - 1.0.65+ ('\\tbody\\t[ts]')         → unchanged
-      - Anything unrecognized              → unchanged pass-through
+    Handles all historical input shapes:
+      - Pre-1.0.62 ('[ts] body')               → 'body\\t[ts]'
+      - 1.0.62 ('body  [ts]', 2 spaces)        → 'body\\t[ts]'
+      - 1.0.64 ('body\\t[ts]', no leading tab) → unchanged (already canonical)
+      - 1.0.65-1.0.72 ('\\tbody\\t[ts]')       → 'body\\t[ts]' (strip leading tab)
+      - Anything unrecognized                  → unchanged pass-through
 
     Used by _load_ready_log on the persisted ready_log.txt file. The on-
-    disk file is intentionally not rewritten — the migration runs on every
+    disk file is intentionally not rewritten -- the migration runs on every
     launch on whatever pre-canonical lines remain in today's file. Cheap,
     and avoids rewrite-during-load edge cases. Tomorrow's file (after
     midnight rollover) is uniformly canonical from the start."""
-    # Already canonical (1.0.65+): leading tab → leave alone.
+    # 1.0.65-1.0.72 format: leading tab -- strip it to get canonical form.
     if text.startswith("\t"):
-        return text
-    # 1.0.64 layout: 'body\t[ts]' (no leading tab). Just prepend a tab.
+        return text[1:]
+    # 1.0.64 layout / already canonical: 'body\t[ts]' (no leading tab).
     if "\t[" in text:
-        return "\t" + text
+        return text
     # Pre-1.0.62 layout: '[ts] body'.
     if text.startswith("["):
         bracket_end = text.find("] ")
@@ -572,18 +572,17 @@ def _migrate_old_log_line(text: str) -> str:
             ts = text[1:bracket_end]
             body = text[bracket_end + 2:]
             if ts and body:
-                return f"\t{body}\t[{ts}]"
+                return f"{body}\t[{ts}]"
         return text
     # 1.0.62 layout: 'body  [ts]'. The double-space separator was a
     # transition-period choice; replaced with tabs in 1.0.64+ so tab
-    # stops can column-align both the body (centered) and timestamp
-    # (right-aligned).
+    # stops can column-align the body (left) and timestamp (right-aligned).
     sep_idx = text.find("  [")
     if sep_idx >= 0:
         body = text[:sep_idx]
         rest = text[sep_idx + 2:]  # includes the '['
         if body and rest.startswith("[") and rest.endswith("]"):
-            return f"\t{body}\t{rest}"
+            return f"{body}\t{rest}"
     return text
 
 
@@ -4358,11 +4357,9 @@ class ChairsideReadyAlertApp:
             return
         if width <= 1:
             return  # widget not realized yet
-        # left_x=0 (previously 4) so the body lands at content_x=0, which
-        # combined with log padx=0 and RoundedLogPanel _inset=0 puts the
-        # body's leftmost character flush with the "Ready Messages"
-        # header above the log.
-        left_x = 0
+        # Body text starts at x=0 (no leading tab in log lines since 1.0.73).
+        # One tab stop: the right-aligned timestamp column, positioned just
+        # past the widest body text seen so far + timestamp width + gap.
         max_body = float(getattr(self, "_max_body_width_px", 0))
         # Estimate timestamp text width once per call (cheap; the string is
         # short). Use a representative "[12:34 AM]" so the measure is the
@@ -4376,14 +4373,14 @@ class ChairsideReadyAlertApp:
         # Position the right tab past where the widest body's right edge
         # would land when left-aligned. Clamp to widget width so the tab
         # stop never falls off-screen on a narrow window.
-        tab2_x = left_x + max_body + ts_w + gap
+        tab2_x = max_body + ts_w + gap
         tab2_x = min(tab2_x, max(80, width - 8))
         # Cache for _current_separator_width so the gray separator's right
         # edge tracks the timestamp's right edge (which is where the
         # right-aligned tab stop lands).
         self._right_tab_x = float(tab2_x)
         try:
-            self.log.configure(tabs=(int(left_x), "left", int(tab2_x), "right"))
+            self.log.configure(tabs=(int(tab2_x), "right"))
         except tk.TclError:
             pass
         # Tab stop changed → separator widths may need refreshing too.
@@ -4640,9 +4637,8 @@ class ChairsideReadyAlertApp:
             # for incoming bodies.
             try:
                 first_tab = text.find("\t")
-                second_tab = text.find("\t", first_tab + 1) if first_tab >= 0 else -1
-                if first_tab >= 0 and second_tab >= 0:
-                    self._note_body_width(text[first_tab + 1:second_tab], _ui_font(10))
+                if first_tab >= 0:
+                    self._note_body_width(text[:first_tab], _ui_font(10))
             except Exception:
                 pass
             self.log.see("end")
@@ -4995,7 +4991,7 @@ class ChairsideReadyAlertApp:
             # displayed lines. Uses the 15pt-bold metric for the new
             # recent1 body and falls back gracefully if measurement fails.
             try:
-                body_text = text[first_tab + 1:second_tab] if first_tab >= 0 and second_tab >= 0 else text
+                body_text = text[:first_tab] if first_tab >= 0 else text
                 self._note_body_width(body_text, _ttk_font(15, "bold"))
             except Exception:
                 pass
@@ -5296,7 +5292,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
-        self._append_ready_log(f"\tReady → {', '.join(targets)}\t[{now_str_short()}]")
+        self._append_ready_log(f"Ready → {', '.join(targets)}\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -5317,7 +5313,7 @@ class ChairsideReadyAlertApp:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
             return
         client.send_chat(["ALL"], message)
-        self._append_ready_log(f"\tReady → All\t[{now_str_short()}]")
+        self._append_ready_log(f"Ready → All\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
 
     def _maybe_trigger_whimsy(self) -> None:
@@ -5431,7 +5427,7 @@ class ChairsideReadyAlertApp:
                 if self._is_locked_out():
                     self._append_diag(f"Incoming Ready from {sender} dropped: trial expired (purchase to re-enable).")
                     return
-                self._append_incoming_ready_log(f"\t{sender}: Ready\t[{ts}]")
+                self._append_incoming_ready_log(f"{sender}: Ready\t[{ts}]")
                 alert_sound = str(payload.get("alert_sound", "")).strip() or self.alert_sound_var.get()
                 self._focus_and_alert_main_window(alert_sound=alert_sound, alert_volume=int(self.alert_volume_var.get()))
 
