@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.73"
+APP_VERSION = "1.0.74"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1344,7 +1344,7 @@ class RoundedLogPanel(tk.Frame):
             relief="flat",
             borderwidth=0,
             highlightthickness=0,
-            padx=0,
+            padx=4,
             pady=4,
             bg=log_bg,
             fg=log_fg,
@@ -4806,6 +4806,13 @@ class ChairsideReadyAlertApp:
         # cheaper and produces the same final state.
         self._refresh_separators()
         self._trim_log_to_max_entries()
+        # _load_ready_log runs before deiconify(), so the canvas hasn't been
+        # realized yet when the individual appenders call log.see("end").
+        # That sets the yview while the widget is still at its default small
+        # height, leaving the top entries scrolled out of view once the
+        # canvas expands to fill the window. Reset to yview=0 after the
+        # window is shown so all kept entries are visible from the top.
+        self.root.after(50, lambda: self.log.yview_moveto(0))
 
     def _check_log_rollover(self) -> None:
         """Periodic (every 60s) check that the in-memory log + persistent file
