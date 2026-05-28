@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.67"
+APP_VERSION = "1.0.68"
 # True for PyInstaller-frozen builds (Microsoft Store EXE). The Store install
 # directory is read-only and Store policy prohibits self-update, so the auto-
 # update UI and any "spawn python on the .py file" code paths must be gated
@@ -4308,6 +4308,10 @@ class ChairsideReadyAlertApp:
         # stop never falls off-screen on a narrow window.
         tab2_x = left_x + max_body + ts_w + gap
         tab2_x = min(tab2_x, max(80, width - 8))
+        # Cache for _current_separator_width so the gray separator's right
+        # edge tracks the timestamp's right edge (which is where the
+        # right-aligned tab stop lands).
+        self._right_tab_x = float(tab2_x)
         try:
             self.log.configure(tabs=(int(left_x), "left", int(tab2_x), "right"))
         except tk.TclError:
@@ -4405,6 +4409,31 @@ class ChairsideReadyAlertApp:
             self.log.configure(state="disabled")
 
     def _current_separator_width(self) -> int:
+        # Track the timestamp column's right edge instead of the widget's
+        # right edge, so the separator ends "just inside the right end of
+        # the timestamp" -- mirroring the left side where it ends "just
+        # inside the leftmost body character."
+        #
+        # Geometry in content coordinates:
+        #   body left edge   = left_x (4) -- set in _refresh_log_tabstop
+        #   sep  left edge   = 12        -- window_create padx=12 in
+        #                                   _refresh_separators
+        #   ts   right edge  = tab2_x    -- right tab stop, cached as
+        #                                   self._right_tab_x
+        #
+        # The left side sits (12 - 4 = 8)px to the right of the body's
+        # first character, which the user describes as "just inside the
+        # R in Room." To mirror that on the right side, the separator's
+        # right edge should sit 8px to the left of the timestamp's right
+        # edge -- i.e. at tab2_x - 8. Since the separator's own left edge
+        # is at content_x = 12, the width is (tab2_x - 8) - 12 = tab2_x -
+        # 20.
+        tab2_x = getattr(self, "_right_tab_x", 0.0)
+        if tab2_x > 60:
+            return max(40, int(tab2_x) - 20)
+        # Fallback for very-early init before _refresh_log_tabstop has
+        # run -- keep close to the old behavior so the first paint is
+        # not jarringly different.
         try:
             return max(40, self.log.winfo_width() - 36)
         except tk.TclError:
