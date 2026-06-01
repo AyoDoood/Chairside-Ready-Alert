@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.79"
+APP_VERSION = "1.0.80"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -217,6 +217,10 @@ TRIAL_REMINDER_DAYS = (6, 3, 1)
 # blank the Buy button falls back to STORE_PRODUCT_WEB_URL.
 STORE_PRODUCT_ID = "9NKDHB58JJC5"
 STORE_PRODUCT_WEB_URL = "https://apps.microsoft.com/detail/9NKDHB58JJC5"
+# Public FAQ & Troubleshooting page (GitHub Pages). Opened from the Help menu
+# and the About dialog. Same page the marketing site's "Read the FAQ" button
+# points at (index.html -> ./FAQ.html).
+FAQ_URL = "https://ayodoood.github.io/Chairside-Ready-Alert/FAQ.html"
 
 
 def _trial_days_remaining(first_launch_iso: str) -> Optional[int]:
@@ -2449,6 +2453,7 @@ class ChairsideReadyAlertApp:
             )
         menu.add_cascade(label="Layout", menu=layout_menu)
         help_menu = tk.Menu(menu, tearoff=0)
+        help_menu.add_command(label="FAQ & Troubleshooting (web)...", command=self._open_faq_page)
         help_menu.add_command(label="Connection log...", command=self._open_connection_log_window)
         help_menu.add_command(label="Windows Tray Icon Setup...", command=self._show_windows_tray_help)
         help_menu.add_separator()
@@ -2459,15 +2464,36 @@ class ChairsideReadyAlertApp:
         menu.add_cascade(label="Help", menu=help_menu)
         self.root.config(menu=menu)
 
+    def _open_faq_page(self) -> None:
+        """Open the public FAQ & Troubleshooting page in the default browser.
+        Wired to the Help menu and offered from the About dialog."""
+        try:
+            webbrowser.open(FAQ_URL)
+        except Exception as exc:
+            self._append_diag(f"Could not open FAQ page: {exc}")
+            messagebox.showinfo(
+                APP_TITLE,
+                f"Couldn't open your browser automatically. The FAQ is at:\n\n{FAQ_URL}",
+            )
+
     def _show_about_dialog(self) -> None:
-        messagebox.showinfo(
+        # askyesno (not showinfo) so the dialog can offer a one-click path to
+        # the FAQ, matching the _show_windows_tray_help "...open settings now?"
+        # idiom. The URL is shown in full too, so it's copyable even if the
+        # browser can't be launched.
+        open_faq = messagebox.askyesno(
             f"About {APP_TITLE}",
             f"{APP_TITLE}\n"
             f"Version {APP_VERSION}\n\n"
             f"For support questions, contact:\n"
-            f"support@fieldcrestdental.com\n\n"
-            f"Please allow 24-48 hours for a response.",
+            f"support@fieldcrestdental.com\n"
+            f"(Please allow 24-48 hours for a response.)\n\n"
+            f"FAQ & Troubleshooting:\n"
+            f"{FAQ_URL}\n\n"
+            f"Open the FAQ in your browser now?",
         )
+        if open_faq:
+            self._open_faq_page()
 
     # ---- Trial / paid-license gating (frozen Store builds only) ----------
     # Dev runs are always treated as licensed: every helper below short-circuits
