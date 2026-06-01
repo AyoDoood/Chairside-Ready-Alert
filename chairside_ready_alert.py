@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.78"
+APP_VERSION = "1.0.79"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -155,6 +155,39 @@ BEACON_INTERVAL = 2.5
 BEACON_VERSION = 1
 PEER_STALE_SEC = 12.0
 BUFFER_SIZE = 4096
+# --- TCP liveness (fix: "left on overnight -> peers discovered but Ready
+# silently not received") ----------------------------------------------------
+# A cached peer socket whose far end vanished overnight WITHOUT a FIN/RST (the
+# peer slept/hibernated, a NIC power-management setting suspended the adapter,
+# or a managed switch aged out the idle TCP flow) becomes a black hole:
+# sendall() of the small Ready JSON succeeds into the local kernel buffer and
+# the bytes are then dropped on the wire, with no exception and no error -- the
+# UI even logged "Sent ->". TCP keepalive was OFF on every socket and the
+# ping/pong heartbeat was only half-wired (the server answered pings but
+# nothing ever sent one), so neither side ever noticed the dead path. These
+# knobs turn that silent half-open into a detected disconnect within seconds so
+# the existing 3s-backoff reconnect can rebuild a live socket.
+KEEPALIVE_IDLE_SEC = 30        # OS keepalive: start probing after this idle gap
+KEEPALIVE_INTVL_SEC = 5        # ...then probe this often until the peer answers
+# Application-level heartbeat: each MessageClient sends a tiny {"type":"ping"}
+# after this many seconds of socket silence. This is the linchpin -- it runs
+# continuously (even overnight), so a dead path raises on the sending socket
+# within seconds instead of looping on recv-timeout forever, AND it keeps a
+# stateful switch from aging out the flow in the first place. The server
+# already answers ping with pong, so no peer-side change is needed.
+HEARTBEAT_INTERVAL_SEC = 5.0
+# The sync loop rebuilds a peer client (other than the load-bearing 127.0.0.1
+# loopback) that still has a socket but has heard nothing -- not even a
+# heartbeat pong -- for longer than this. Must exceed HEARTBEAT_INTERVAL_SEC so
+# a quiet-but-alive socket is never churned.
+CLIENT_STALE_SEC = 30.0
+# A normally-1.5s sync tick that arrives more than this late (by the monotonic
+# clock) almost certainly means the machine slept/hibernated -- root.after
+# timers do not fire while asleep. We then bounce the LAN to rebuild fresh
+# sockets, the Windows equivalent of the macOS NSWorkspaceDidWakeNotification
+# recovery. Kept well above any plausible busy-workday tick stall (AV scan,
+# backup, descheduled pythonw) so it cannot spuriously bounce a healthy LAN.
+WAKE_GAP_SEC = 150.0
 CONFIG_FILE = "chairside_ready_alert_config.json"
 # Frozen Store builds get their own lock filename and IPC port so they do not
 # collide with a developer's `python chairside_ready_alert.py` run on the same
@@ -905,6 +938,52 @@ class LanDiscovery:
             return {k: dict(v) for k, v in self.peers.items()}
 
 
+def _enable_tcp_keepalive(sock: socket.socket) -> None:
+    """Enable aggressive TCP keepalive on a connected socket so an ungraceful
+    (no FIN/RST) peer death -- the overnight failure where a peer sleeps, a NIC
+    power-saves, or a switch ages out the idle flow -- is detected in about a
+    minute instead of the ~2h Windows default. Fully exception-safe: any failure
+    leaves the socket usable exactly as before, so it can never introduce a new
+    socket-setup crash (which would itself be a silent-failure regression)."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except Exception:
+        pass
+    # Windows: the SIO_KEEPALIVE_VALS ioctl takes a plain (onoff, idle_ms,
+    # interval_ms) int tuple -- no struct.pack needed. The retry COUNT is fixed
+    # at 10 by the OS, so a fully dead peer is declared dead about
+    # idle + 10*interval seconds (here ~30 + 10*5 = ~80s) after the last byte.
+    if hasattr(socket, "SIO_KEEPALIVE_VALS"):
+        try:
+            sock.ioctl(
+                socket.SIO_KEEPALIVE_VALS,
+                (1, KEEPALIVE_IDLE_SEC * 1000, KEEPALIVE_INTVL_SEC * 1000),
+            )
+        except Exception:
+            pass
+        return
+    # Linux: per-socket idle/interval/count at IPPROTO_TCP (values in seconds).
+    if hasattr(socket, "TCP_KEEPIDLE"):
+        for opt, val in (
+            (socket.TCP_KEEPIDLE, KEEPALIVE_IDLE_SEC),
+            (getattr(socket, "TCP_KEEPINTVL", None), KEEPALIVE_INTVL_SEC),
+            (getattr(socket, "TCP_KEEPCNT", None), 4),
+        ):
+            if opt is None:
+                continue
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, opt, val)
+            except Exception:
+                pass
+        return
+    # macOS: TCP_KEEPALIVE is the idle-seconds option (no per-socket intvl/cnt).
+    if hasattr(socket, "TCP_KEEPALIVE"):
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, KEEPALIVE_IDLE_SEC)
+        except Exception:
+            pass
+
+
 class MessageServer:
     def __init__(self, host: str, port: int, ui_queue: queue.Queue) -> None:
         self.host = host
@@ -1001,6 +1080,16 @@ class MessageServer:
         label = None
         buffer = ""
         client_sock.settimeout(1.0)
+        # Keepalive on the ACCEPTED (inbound) socket. This is a peer's
+        # cross-machine connection INTO our server, and it is the socket
+        # _relay_chat writes a Ready into when delivering to the label
+        # registered on it. If it half-died overnight, that relay sendall would
+        # vanish silently; keepalive makes the recv() below raise OSError so we
+        # break, run the cleanup that pops the dead label, and the peer's
+        # reconnect re-registers a live socket. (NB: the 127.0.0.1 loopback
+        # self-connection -- registered under our OWN label -- is load-bearing
+        # for receiving our own relayed alerts and must not be removed.)
+        _enable_tcp_keepalive(client_sock)
         self.ui_queue.put(("status", f"Peer connected from {addr[0]}"))
         rejected_duplicate = False
         while self.running:
@@ -1135,6 +1224,12 @@ class MessageClient:
         self.sock = None
         self.running = False
         self.lock = threading.Lock()
+        # Monotonic time of the last byte received on self.sock (set on connect,
+        # refreshed on every recv-with-data including heartbeat pongs). The sync
+        # loop reads it to spot a socket that has gone silent. Only the client
+        # thread writes it and only the sync loop reads it -- a single float, so
+        # no lock is required and a stale read just delays eviction by one tick.
+        self.last_rx = time.monotonic()
 
     def connect(self) -> None:
         self.running = True
@@ -1172,6 +1267,12 @@ class MessageClient:
                 sock.settimeout(5)
                 sock.connect((self.host, self.port))
                 sock.settimeout(1.0)
+                # Arm keepalive so an ungraceful (no FIN/RST) death of THIS
+                # outbound socket -- the overnight black hole that silently
+                # swallowed Ready alerts -- surfaces as an OSError on recv
+                # within ~1 min instead of the ~2h Windows default.
+                _enable_tcp_keepalive(sock)
+                self.last_rx = time.monotonic()
                 with self.lock:
                     self.sock = sock
                 self.ui_queue.put(("status", f"Connected to {self.host}:{self.port}"))
@@ -1190,15 +1291,35 @@ class MessageClient:
 
     def _listen_loop(self, sock: socket.socket) -> None:
         buffer = ""
+        # ~1 increment per second (the recv timeout below is 1.0s). When it
+        # reaches HEARTBEAT_INTERVAL_SEC we push a ping so a dead path is
+        # detected here instead of looping on recv-timeout forever against a
+        # silent half-open socket. Reset whenever real data arrives.
+        idle_secs = 0
         while self.running:
             try:
                 data = sock.recv(BUFFER_SIZE)
             except socket.timeout:
+                idle_secs += 1
+                if idle_secs >= HEARTBEAT_INTERVAL_SEC:
+                    idle_secs = 0
+                    # Send DIRECTLY, not via self._send_json -- its bare
+                    # except:pass would swallow the very OSError we need to see.
+                    # A failed heartbeat send breaks the loop; _run then
+                    # reconnects under its existing 3s backoff (so no storm).
+                    try:
+                        sock.sendall(
+                            (json.dumps({"type": "ping", "ts": time.time()}) + "\n").encode("utf-8")
+                        )
+                    except OSError:
+                        break
                 continue
             except OSError:
                 break
             if not data:
                 break
+            self.last_rx = time.monotonic()
+            idle_secs = 0
             buffer += data.decode("utf-8", errors="ignore")
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
@@ -1523,6 +1644,11 @@ class ChairsideReadyAlertApp:
         self.peer_clients: dict[str, MessageClient] = {}
         self._network_running = False
         self._sync_after_id: Optional[str] = None
+        # Monotonic timestamp of the previous _sync_peer_clients_tick. A gap far
+        # larger than the 1.5s cadence means the machine slept; see the
+        # wake-recovery block in that method. Seeded in start_network (NOT here)
+        # so a long idle between app launch and Start can't read as a wake.
+        self._last_tick_monotonic: Optional[float] = None
         self.local_ips = local_ipv4_addresses()
         self.online_labels: list[str] = []
         self._duplicate_name_detected = False
@@ -2087,7 +2213,9 @@ class ChairsideReadyAlertApp:
         self._show_main_window()
 
     def _handle_system_wake(self) -> None:
-        """Triggered by an NSWorkspaceDidWakeNotification observer on macOS.
+        """Triggered by an NSWorkspaceDidWakeNotification observer on macOS, and
+        on Windows by the monotonic tick-gap detector in _sync_peer_clients_tick
+        (root.after timers stall while asleep, so a large gap means we woke).
         macOS sleep-then-wake often leaves the MessageServer's TCP listening
         socket in a state where the next accept() raises OSError, and inbound
         _handle_client recv loops still hold dead sockets that will never see
@@ -2101,7 +2229,7 @@ class ChairsideReadyAlertApp:
             return
         if not self._network_running:
             return
-        self._append_diag("macOS wake detected — bouncing the LAN to recover from any sleep-broken sockets.")
+        self._append_diag("System wake detected — bouncing the LAN to recover from any sleep-broken sockets.")
         try:
             self.stop_network()
         except Exception as exc:
@@ -5149,6 +5277,37 @@ class ChairsideReadyAlertApp:
         self._sync_after_id = None
         if not self._network_running or not self.discovery:
             return
+
+        # --- Windows sleep/wake recovery (dependency-free) -------------------
+        # root.after timers don't fire while the machine is asleep, so a tick
+        # arriving far later than its 1.5s cadence means we almost certainly
+        # slept/hibernated. On wake our outbound peer_clients are stale
+        # half-open sockets that would silently swallow Ready alerts, so bounce
+        # the LAN to rebuild fresh server + clients. We reuse the existing macOS
+        # wake path: post ('system_wake', None) and let the UI-thread queue
+        # drain call _handle_system_wake (honoring the queue-only threading
+        # rule). _last_tick_monotonic is seeded in start_network, so the very
+        # first tick after Start can't read as a wake event.
+        now_mono = time.monotonic()
+        if self._last_tick_monotonic is not None and (
+            now_mono - self._last_tick_monotonic > WAKE_GAP_SEC
+        ):
+            gap = now_mono - self._last_tick_monotonic
+            self._last_tick_monotonic = now_mono
+            self._append_diag(
+                f"Sync tick gap {gap:.0f}s -- likely woke from sleep; "
+                "bouncing LAN to rebuild any sleep-broken sockets."
+            )
+            self.queue.put(("system_wake", None))
+            self._schedule_sync_loop()
+            return
+        self._last_tick_monotonic = now_mono
+
+        # Refresh our own IPs each tick (cheap) so an overnight DHCP lease change
+        # for THIS machine is reflected in beacon self-filtering and the
+        # manual-IP skip below without needing a full network restart.
+        self.local_ips = local_ipv4_addresses()
+
         self.discovery.prune_stale()
         self.discovery.update_label(self.label_var.get().strip())
         try:
@@ -5170,6 +5329,28 @@ class ChairsideReadyAlertApp:
         for ip in list(self.peer_clients.keys()):
             if ip not in desired:
                 self.peer_clients[ip].disconnect()
+                del self.peer_clients[ip]
+
+        # Evict a dead-but-present client whose peer IP never left discovery --
+        # the structural reason the overnight half-open socket used to be
+        # immortal (the create branch below only fires "if ip not in
+        # peer_clients"). Act only when the socket is still present yet has heard
+        # nothing for CLIENT_STALE_SEC despite the ~5s heartbeat: that means
+        # keepalive AND heartbeat both failed to surface the death, so force a
+        # rebuild. A client already reconnecting (sock is None) is left alone --
+        # its own _run loop is on it. The 127.0.0.1 loopback is EXEMPT: it
+        # legitimately receives nothing for hours, physically cannot half-open,
+        # and churning it would open a gap in our own receive path.
+        for ip in list(self.peer_clients.keys()):
+            if ip == "127.0.0.1":
+                continue
+            c = self.peer_clients[ip]
+            if ip in desired and c.sock is not None and (now_mono - c.last_rx) > CLIENT_STALE_SEC:
+                self._append_diag(
+                    f"Peer {ip} went silent > {CLIENT_STALE_SEC:.0f}s with a live socket "
+                    "-- rebuilding its connection."
+                )
+                c.disconnect()
                 del self.peer_clients[ip]
 
         label = self.label_var.get().strip()
@@ -5246,6 +5427,10 @@ class ChairsideReadyAlertApp:
         self._set_duplicate_name_warning(False)
         self._persist_form()
         self._append_diag(f"LAN mode: label={label}, port={port}, discovery UDP:{DISCOVERY_PORT}")
+        # Seed the wake-detector baseline right before the sync loop starts so
+        # its first tick measures a real ~1.5s interval, not the gap since app
+        # launch (which would otherwise false-trigger a wake bounce).
+        self._last_tick_monotonic = time.monotonic()
         self._schedule_sync_loop()
         self._refresh_lan_status_banner()
         self._schedule_lan_health_check()
@@ -5329,6 +5514,19 @@ class ChairsideReadyAlertApp:
         if not client:
             messagebox.showwarning(APP_TITLE, "Not connected to that station yet — try again in a few seconds.")
             return
+        # Don't fire a Ready into a socket we already know is down. In steady
+        # state the heartbeat keeps this socket either live or visibly
+        # reconnecting (sock is None during the 3s backoff), so a None here
+        # means "mid-reconnect" -- surface that instead of logging a "Sent" that
+        # never left the machine. The sync loop / the client's own _run loop
+        # will have it back within a few seconds.
+        if getattr(client, "sock", None) is None:
+            messagebox.showwarning(
+                APP_TITLE,
+                "Reconnecting to that station after it was idle or asleep — "
+                "wait a moment and tap Ready again.",
+            )
+            return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
         self._append_ready_log(f"Sent → {', '.join(targets)}\t[{now_str_short()}]")
         self._maybe_trigger_whimsy()
@@ -5349,6 +5547,12 @@ class ChairsideReadyAlertApp:
             client = self._any_peer_client()
         if not client:
             messagebox.showwarning(APP_TITLE, "No peer connection available yet.")
+            return
+        if getattr(client, "sock", None) is None:
+            messagebox.showwarning(
+                APP_TITLE,
+                "Reconnecting after an idle or sleep gap — wait a moment and tap Ready again.",
+            )
             return
         client.send_chat(["ALL"], message)
         self._append_ready_log(f"Sent → All\t[{now_str_short()}]")
