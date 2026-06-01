@@ -10,6 +10,71 @@ Issues are grouped by topic. If your problem isn't here, email
 
 ---
 
+## Installation Instructions
+
+**Read this first — getting the network right is what makes the app
+work.** Chairside Ready Alert has no central server and nothing in the
+cloud. Each computer talks **directly** to the others over your office
+network, so the single most important thing is that every computer that
+needs to alert the others is on the **same local network**.
+
+**What is a LAN?**
+LAN stands for **Local Area Network** — it's simply the private network
+inside your office that your router creates to connect your computers,
+printers, and Wi-Fi together. Every device on the same LAN is given an
+**IP address** in the same range — for example `192.168.1.10`,
+`192.168.1.11`, `192.168.1.12` (notice the first three numbers match).
+Chairside Ready Alert uses those IP addresses to let the workstations
+find and message each other. There's no account to create and nothing
+leaves the building — it all stays on your own network.
+
+**The basic setup — do this on every workstation:**
+
+1. Install the app on each computer (Section 1 below covers the install
+   steps and the Windows / macOS security prompts you'll see).
+2. Connect every computer to the **same** office network — the same
+   router — whether by Ethernet cable or Wi-Fi.
+3. Launch the app on each one and give it a unique station name
+   (Room 1, Room 2, Doctor, Lab, and so on).
+4. Within a few seconds each workstation should appear in the others'
+   lists. You're done.
+
+**If any computers connect over Wi-Fi — please read this:**
+For everything to find each other, your **wired** computers and your
+**Wi-Fi** computers must be on the **same** network, with IP addresses
+in the same range. The most common problem is a **second Wi-Fi router**
+plugged in behind the main one: it creates its *own* separate network, so
+the Wi-Fi computers get IP addresses in a different range
+(e.g. `192.168.0.x`) than the wired computers (`192.168.1.x`), and the
+two groups can't see each other.
+
+The fix is to set that Wi-Fi router to **"Bridge" mode** (some brands
+call it **"Access Point" or "AP" mode**). Bridge mode tells the Wi-Fi
+router to stop handing out its own separate IP addresses and instead just
+extend your main network — so every device, wired or wireless, lands in
+the **same IP range** and can find the others. The "Bridge" / "AP Mode"
+setting lives in the Wi-Fi router's admin page; if you're not sure how to
+change it, your IT person or internet provider can usually flip it in a
+couple of minutes.
+
+Two more Wi-Fi settings to avoid:
+
+- **Don't put the workstations on a "Guest" Wi-Fi network** — guest
+  networks are deliberately designed to keep devices from seeing each
+  other.
+- **Turn off "AP isolation" / "client isolation"** if your router has it
+  — it blocks devices on the same Wi-Fi from talking to each other.
+
+**How to check it's right:** on two of the computers, look up the IP
+address (Windows: open Command Prompt and type `ipconfig`; Mac:
+**System Settings → Wi-Fi → Details**). If the **first three numbers**
+match — for example both start `192.168.1.` — you're on the same network
+and the app will work. If they're different, you have the two-network
+problem above: switch the Wi-Fi router to Bridge mode, or see Section 6
+for a manual workaround.
+
+---
+
 ## 1. Installing and first launch
 
 **Q: Windows shows a "Microsoft Defender SmartScreen prevented an unrecognized app from starting" warning. Is the app safe?**
@@ -114,6 +179,27 @@ station. Now one tap of the Ready button goes to every default target.
 Sender controls which sound plays on the receiver. The sender's
 **Alert sound** dropdown selects the sound played at the receiver.
 The receiver's volume slider controls how loud it plays locally.
+
+**Q: Why is there a stick figure coming on screen randomly?**
+That's a small built-in bit of fun, not a bug. Every so often, after
+you've sent several Ready alerts, a little stick figure animates across
+your screen — it strolls out from behind the Ready button, wanders
+around, and disappears on its own after a second or two. It only shows
+on the screen of the person **sending** the alert, it never makes a
+sound, and it has no effect on whether your alerts are delivered.
+
+It is deliberately occasional: it appears only once every several alerts
+(and never from rapidly tapping the button — qualifying sends have to be
+at least 10 minutes apart), so it stays a pleasant surprise rather than a
+distraction.
+
+If you'd like to change the character or turn the animations off
+completely, the app ships with an **Animation Picker**. Open the app's
+install folder (Section 1 has the path) and run
+`ready_animation_picker.py` — in the picker you can choose a different
+stick figure or untick every animation to switch the feature off
+entirely. If you're not comfortable doing that, email support and we'll
+help you turn it off.
 
 ---
 
@@ -281,46 +367,51 @@ The version is shown when **Settings → Check for updates…** reports
 No. The app does not contain analytics SDKs, advertising SDKs, or
 crash reporting that contacts external servers. The only outbound
 internet traffic is the **manual** update check on direct-installer
-builds (Microsoft Store builds verify the local user's Microsoft
-subscription via the Microsoft Store SDK; this query goes through
-the local Windows Microsoft Store service, not a third-party
-endpoint).
+builds (Microsoft Store builds confirm the user's one-time purchase
+via the Microsoft Store licensing SDK; this query goes through the
+local Windows Microsoft Store service, not a third-party endpoint).
 
-**Q: How does the subscription work?**
-The Microsoft Store version is **free to download** and requires a
-**$1.99 / month subscription** to use. Microsoft Store handles
-billing, renewal, and cancellation. One subscription on a single
-Microsoft account covers up to **10 devices** linked to that
-account — enough for an entire typical dental practice from one
-purchase.
+**Q: How much does it cost, and how does buying it work?**
+The Microsoft Store version is a **one-time purchase** (currently
+**$14.99 USD** — check the Store listing for the latest price). There
+is **no subscription** and no recurring charge. You can try it free for
+**7 days**, then buy it once through the Store's normal **Get / Buy**
+button and it's yours for good. A purchase is tied to your **Microsoft
+account**, so under Microsoft's standard policy you can install it on the
+devices signed in to that account (up to 10) — enough for a typical
+dental practice from a single purchase.
 
-To subscribe: launch the app, click "Subscribe — $1.99 / month" in
-the welcome window. Microsoft Store overlays its own purchase
-flow. Once complete, the app loads normally.
+**Q: Is it a recurring charge? How do I cancel?**
+It isn't recurring — it's a one-time purchase, so there is nothing to
+cancel and you will never be billed again. (The old **$1.99 / month**
+subscription was retired; if you see older instructions mentioning a
+monthly fee or a "Subscribe" window, they are out of date.)
 
-**Q: How do I cancel my subscription?**
-In the Microsoft Store app:
-**Library → Subscriptions → Chairside Ready Alert Monthly → Manage → Cancel**.
-You retain access until the end of the current billing period.
+**Q: What happens when the 7-day free trial ends?**
+On the Microsoft Store version the app reminds you as the trial winds
+down (around 6, 3, and 1 days left). If the trial ends and you haven't
+purchased, the Ready button stops sending and shows a **Buy** option
+instead — but the app stays open and still appears online to your peers,
+so buying unlocks it instantly with no reinstall or restart. (The free
+direct-installer version has no trial and no purchase — see below.)
 
 **Q: Does the app work offline?**
-Yes, after the subscription is verified once. The app caches the
-verification result for 7 days, so a workstation that loses
-internet keeps working as long as the subscription has been
-verified within the last week. After 7 days without a successful
-verification, the paywall reappears.
+Yes. The 7-day trial counts down by calendar date whether or not you're
+online. Once you've purchased, the app remembers you're licensed and
+keeps working offline; it quietly re-confirms the purchase with the
+Microsoft Store in the background the next time it has internet. There is
+no periodic "phone home" that locks a paying user out for being offline.
 
-**Q: I bought a subscription on another computer — how do I activate it on this one?**
-Sign in to Microsoft Store on the new computer with the **same**
-Microsoft account that holds the subscription. Launch Chairside
-Ready Alert. If the paywall appears, click "Restore purchases" —
-the app will detect the active subscription on that account and
-unlock.
+**Q: I bought it on another computer — how do I get it on this one?**
+Sign in to the Microsoft Store on the new computer with the **same**
+Microsoft account you used to buy it, then install and launch Chairside
+Ready Alert. It recognizes the purchase on that account automatically —
+there's no separate activation step or unlock code.
 
-**Q: I'm using the direct-installer (.ps1 / .command) version — do I need to subscribe?**
-No. The subscription requirement applies only to the Microsoft
-Store version. The direct-installer flow (Windows .ps1 / .bat,
-macOS .command) ships free as it always has.
+**Q: I'm using the direct-installer (.ps1 / .command) version — do I need to buy it?**
+No. The purchase and the trial apply only to the Microsoft Store version.
+The direct-installer flow (Windows .ps1 / .bat, macOS .command) ships
+free as it always has.
 
 **Q: Is alert traffic encrypted on the LAN?**
 No. Messages and peer-discovery beacons are sent in cleartext across
