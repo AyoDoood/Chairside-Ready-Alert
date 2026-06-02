@@ -188,6 +188,23 @@ CLIENT_STALE_SEC = 30.0
 # recovery. Kept well above any plausible busy-workday tick stall (AV scan,
 # backup, descheduled pythonw) so it cannot spuriously bounce a healthy LAN.
 WAKE_GAP_SEC = 150.0
+# How often this machine re-resolves its own LAN IP set. This used to run on
+# the UI thread every 1.5s inside the sync tick (a blocking getaddrinfo + a
+# fresh UDP socket each time -- a stall risk after a weekend if mDNS/DNS is
+# slow, and ~40 socket churns/min for an address that almost never changes).
+# Now it runs on a background thread no more than this often.
+LOCAL_IP_REFRESH_SEC = 30.0
+# Consecutive failed beacon sends before LanDiscovery rebuilds its broadcast
+# socket (the bound interface likely vanished on a NIC change / IP renumber).
+BROADCAST_FAIL_REBUILD = 3
+# Hard ceiling on a single inbound TCP "line" (newline-delimited JSON). Real
+# beacons/messages are a few hundred bytes; anything streaming past this with
+# no delimiter is a broken or hostile peer and the connection is dropped rather
+# than letting the receive buffer grow without bound.
+MAX_INBOUND_LINE_BYTES = 65536
+# startup_log.txt is rotated once it grows past this so it can't accumulate
+# without limit across launches and lifecycle events.
+STARTUP_LOG_MAX_BYTES = 512 * 1024
 CONFIG_FILE = "chairside_ready_alert_config.json"
 # Frozen Store builds get their own lock filename and IPC port so they do not
 # collide with a developer's `python chairside_ready_alert.py` run on the same
@@ -652,7 +669,13 @@ def detect_local_ip() -> str:
 
 
 def local_ipv4_addresses() -> set[str]:
-    """Addresses that identify this machine (skip connecting to ourselves)."""
+    """Addresses that identify this machine (skip connecting to ourselves).
+
+    NB: the getaddrinfo() call can block (name resolution), so this must NOT be
+    called on the Tk UI thread in a hot loop -- see
+    ChairsideReadyAlertApp._maybe_refresh_local_ips, which runs it on a worker
+    thread no more than every LOCAL_IP_REFRESH_SEC.
+    """
     ips: set[str] = {"127.0.0.1", "::1"}
     try:
         hostname = socket.gethostname()
@@ -666,6 +689,84 @@ def local_ipv4_addresses() -> set[str]:
     if probe_ip:
         ips.add(probe_ip)
     return ips
+
+
+def _directed_broadcasts(local_ips: set[str]) -> list[str]:
+    """Derive /24 directed subnet broadcast addresses (a.b.c.255) from this
+    machine's IPv4 addresses. A directed broadcast is delivered more reliably
+    than the 255.255.255.255 limited broadcast -- the latter egresses only ONE
+    interface (chosen by the default route) and is dropped by some managed
+    switches and firewall profiles. Sending to both makes re-discovery after a
+    Wi-Fi/ethernet failover or DHCP renumber far more robust. Assumes a /24,
+    which covers essentially all small-office LANs; 255.255.255.255 remains the
+    catch-all for anything else."""
+    out: list[str] = []
+    for ip in local_ips:
+        if ":" in ip or ip.startswith("127."):
+            continue
+        parts = ip.split(".")
+        if len(parts) != 4:
+            continue
+        try:
+            if all(0 <= int(p) <= 255 for p in parts):
+                directed = f"{parts[0]}.{parts[1]}.{parts[2]}.255"
+                if directed not in out:
+                    out.append(directed)
+        except ValueError:
+            continue
+    return out
+
+
+def _read_lock_pid(lock_path: str) -> Optional[int]:
+    """PID recorded in the single-instance lock file (written by
+    SingleInstanceLock.acquire), or None if unreadable/blank."""
+    try:
+        with open(lock_path, "r", encoding="utf-8") as f:
+            return int(f.read().strip() or "0")
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """True if a process with this PID currently exists. Used by the stale-lock
+    recovery in main() so the instance lock is only removed when its recorded
+    owner is genuinely gone -- never yanked out from under a live but
+    slow-to-start first instance (which on Windows would let two instances run,
+    and on POSIX wouldn't release the live flock anyway). On any uncertainty we
+    report alive, because a false 'dead' is the dangerous direction."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                # 87 = ERROR_INVALID_PARAMETER -> no such PID (dead).
+                # Anything else (e.g. 5 = ACCESS_DENIED) -> exists (alive).
+                return ctypes.get_last_error() != 87
+            try:
+                code = wintypes.DWORD()
+                if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                    return code.value == STILL_ACTIVE
+                return True
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
 
 
 class ConfigStore:
@@ -768,6 +869,9 @@ class LanDiscovery:
         self.lock = threading.Lock()
         self._b_sock: Optional[socket.socket] = None
         self._l_sock: Optional[socket.socket] = None
+        # Handle to the listen thread so the App's sync tick can detect a
+        # silently-dead listener (is_listen_alive) and restart discovery.
+        self._listen_thread: Optional[threading.Thread] = None
         # Shared station-label state piggybacked on the beacon. The App sets these
         # via update_station_lists; LanDiscovery reads them when sending each beacon.
         self._station_labels: list[str] = []
@@ -809,40 +913,59 @@ class LanDiscovery:
         except Exception:
             pass
 
+    def _make_listen_socket(self) -> Optional[socket.socket]:
+        """Create+bind the UDP listen socket on DISCOVERY_PORT, or None on any
+        failure (caller backs off and retries). Bound to INADDR_ANY so a plain
+        DHCP IP renumber doesn't invalidate it. Fully exception-safe so even fd
+        exhaustion makes the loop retry rather than killing the listen thread."""
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("", DISCOVERY_PORT))
+            s.settimeout(1.0)
+            return s
+        except OSError:
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+            return None
+
+    def _make_broadcast_socket(self) -> Optional[socket.socket]:
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            s.bind(("", 0))
+            return s
+        except OSError:
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+            return None
+
+    def _sleep_running(self, seconds: float) -> None:
+        """Sleep in 100ms slices so stop() (which flips self.running) is honored
+        promptly instead of after a full backoff interval."""
+        for _ in range(max(1, int(seconds / 0.1))):
+            if not self.running:
+                return
+            time.sleep(0.1)
+
     def start(self) -> None:
         self.running = True
-        self._l_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._l_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            self._l_sock.bind(("", DISCOVERY_PORT))
-        except OSError as exc:
-            try:
-                self._l_sock.close()
-            except Exception:
-                pass
-            self._l_sock = None
-            self.ui_queue.put(
-                (
-                    "status",
-                    f"UDP discovery port {DISCOVERY_PORT} busy — use manual peer IPs if others do not appear. ({exc})",
-                )
-            )
-        else:
-            self._l_sock.settimeout(1.0)
-            threading.Thread(target=self._listen_loop, daemon=True).start()
-
-        self._b_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._b_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        try:
-            self._b_sock.bind(("", 0))
-        except OSError:
-            try:
-                self._b_sock.close()
-            except Exception:
-                pass
-            self._b_sock = None
-        else:
-            threading.Thread(target=self._broadcast_loop, daemon=True).start()
+        # Pre-create both sockets so broadcast_label_event has a socket
+        # immediately and the first beacon goes out without waiting for a loop
+        # iteration. The loops own re-creation from here on.
+        self._l_sock = self._make_listen_socket()
+        self._b_sock = self._make_broadcast_socket()
+        self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self._listen_thread.start()
+        threading.Thread(target=self._broadcast_loop, daemon=True).start()
 
     def stop(self) -> None:
         self.running = False
@@ -855,8 +978,34 @@ class LanDiscovery:
         self._b_sock = None
         self._l_sock = None
 
+    def is_listen_alive(self) -> bool:
+        """Whether the discovery listener is healthy. False only signals a
+        recoverable death (the thread exited unexpectedly while running). A
+        never-started listener -- e.g. DISCOVERY_PORT was busy, where a restart
+        wouldn't free the port -- reports True so the App's watchdog doesn't
+        churn restarting it."""
+        if not self.running:
+            return True
+        t = self._listen_thread
+        if t is None:
+            return True
+        return t.is_alive()
+
     def _broadcast_loop(self) -> None:
-        while self.running and self._b_sock:
+        # Self-healing send loop. The bound interface can vanish mid-session
+        # (DHCP renew, Wi-Fi roam, VPN up/down, NIC power-cycle) WITHOUT a
+        # >150s sleep gap, after which sendto begins failing permanently. Rather
+        # than silently looping forever on a dead socket, count failures and
+        # rebuild after BROADCAST_FAIL_REBUILD consecutive misses.
+        fails = 0
+        while self.running:
+            sock = self._b_sock
+            if sock is None:
+                sock = self._make_broadcast_socket()
+                self._b_sock = sock
+                if sock is None:
+                    self._sleep_running(BEACON_INTERVAL)
+                    continue
             try:
                 with self.lock:
                     labels_snap = list(self._station_labels)
@@ -874,56 +1023,116 @@ class LanDiscovery:
                         "removed": removed_snap,
                     }
                 ).encode("utf-8")
-                # 1500 bytes is the typical Ethernet MTU; UDP fragmentation across
-                # a single LAN is fine, so don't bail above 1200 — just send.
-                self._b_sock.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
+                # Send to the limited broadcast AND each directed /24 broadcast
+                # so beacons reach peers even when 255.255.255.255 is dropped or
+                # egresses the wrong adapter after a Wi-Fi/ethernet failover.
+                sent_any = False
+                last_exc: Optional[Exception] = None
+                for dest in ["255.255.255.255", *_directed_broadcasts(self.local_ips)]:
+                    try:
+                        sock.sendto(payload, (dest, DISCOVERY_PORT))
+                        sent_any = True
+                    except OSError as exc:
+                        last_exc = exc
+                if sent_any:
+                    fails = 0
+                elif last_exc is not None:
+                    raise last_exc
             except Exception:
-                pass
-            time.sleep(BEACON_INTERVAL)
+                fails += 1
+                if fails >= BROADCAST_FAIL_REBUILD:
+                    self.ui_queue.put(("status", "Discovery broadcast failing -- rebuilding the socket."))
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+                    self._b_sock = None
+                    fails = 0
+            self._sleep_running(BEACON_INTERVAL)
 
     def _listen_loop(self) -> None:
-        assert self._l_sock is not None
+        # Outer re-bind loop mirrors MessageServer._run_server: a single
+        # recvfrom OSError (NIC flap, adapter reset, sleep/wake) must NOT kill
+        # discovery permanently. The pre-hardening code did `except OSError:
+        # break` and the thread exited for good -- the station then went
+        # silently offline (no beacons received -> every peer pruned at
+        # PEER_STALE_SEC -> appears offline and can't target anyone) until a
+        # full LAN bounce. Now we close the dead socket, back off, re-bind on
+        # DISCOVERY_PORT, and continue.
+        announced_fail = False
         while self.running:
-            try:
-                data, addr = self._l_sock.recvfrom(8192)
-            except socket.timeout:
-                continue
-            except OSError:
-                break
-            ip = addr[0]
-            if ip in self.local_ips:
-                continue
-            try:
-                obj = json.loads(data.decode("utf-8", errors="ignore"))
-            except json.JSONDecodeError:
-                continue
-            if int(obj.get("v", 0)) != BEACON_VERSION:
-                continue
-            msg_type = obj.get("type")
-            if msg_type == "dm_beacon":
-                label = str(obj.get("label", "")).strip() or "Unknown"
+            sock = self._l_sock
+            if sock is None:
+                sock = self._make_listen_socket()
+                self._l_sock = sock
+                if sock is None:
+                    if not announced_fail:
+                        self.ui_queue.put((
+                            "status",
+                            f"UDP discovery port {DISCOVERY_PORT} unavailable -- use manual peer IPs "
+                            "if others do not appear. Retrying.",
+                        ))
+                        announced_fail = True
+                    self._sleep_running(5.0)
+                    continue
+                announced_fail = False
+            while self.running:
                 try:
-                    tcp = int(obj.get("tcp", DEFAULT_PORT))
-                except (TypeError, ValueError):
-                    tcp = DEFAULT_PORT
-                with self.lock:
-                    self.peers[ip] = {"label": label, "tcp": tcp, "last_seen": time.time()}
-                self.ui_queue.put(("discovery", None))
-                # Optional shared-list snapshot. Older peers (pre-1.0.10) won't include
-                # these fields; they're treated as empty and don't advertise removals.
-                inc_labels = obj.get("labels")
-                inc_removed = obj.get("removed")
-                if isinstance(inc_labels, list) or isinstance(inc_removed, list):
-                    self.ui_queue.put((
-                        "labels_snapshot",
-                        ([str(x) for x in (inc_labels or [])],
-                         [str(x) for x in (inc_removed or [])]),
-                    ))
-            elif msg_type == "label_event":
-                action = str(obj.get("action", "")).lower()
-                label = str(obj.get("label", "")).strip()
-                if action in ("add", "remove") and label:
-                    self.ui_queue.put(("label_event", (action, label)))
+                    data, addr = sock.recvfrom(8192)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break  # drop to outer loop -> close + re-bind
+                try:
+                    self._handle_discovery_packet(data, addr)
+                except Exception:
+                    # A single malformed/unexpected packet must never take the
+                    # listener down -- skip it and keep receiving.
+                    continue
+            # Inner loop exited: close the (likely dead) socket so the outer
+            # loop binds a fresh one (or exits cleanly if stop() ran).
+            try:
+                if self._l_sock is not None:
+                    self._l_sock.close()
+            except Exception:
+                pass
+            self._l_sock = None
+
+    def _handle_discovery_packet(self, data: bytes, addr) -> None:
+        ip = addr[0]
+        if ip in self.local_ips:
+            return
+        try:
+            obj = json.loads(data.decode("utf-8", errors="ignore"))
+        except json.JSONDecodeError:
+            return
+        if int(obj.get("v", 0)) != BEACON_VERSION:
+            return
+        msg_type = obj.get("type")
+        if msg_type == "dm_beacon":
+            label = str(obj.get("label", "")).strip() or "Unknown"
+            try:
+                tcp = int(obj.get("tcp", DEFAULT_PORT))
+            except (TypeError, ValueError):
+                tcp = DEFAULT_PORT
+            with self.lock:
+                self.peers[ip] = {"label": label, "tcp": tcp, "last_seen": time.time()}
+            self.ui_queue.put(("discovery", None))
+            # Optional shared-list snapshot. Older peers (pre-1.0.10) won't include
+            # these fields; they're treated as empty and don't advertise removals.
+            inc_labels = obj.get("labels")
+            inc_removed = obj.get("removed")
+            if isinstance(inc_labels, list) or isinstance(inc_removed, list):
+                self.ui_queue.put((
+                    "labels_snapshot",
+                    ([str(x) for x in (inc_labels or [])],
+                     [str(x) for x in (inc_removed or [])]),
+                ))
+        elif msg_type == "label_event":
+            action = str(obj.get("action", "")).lower()
+            label = str(obj.get("label", "")).strip()
+            if action in ("add", "remove") and label:
+                self.ui_queue.put(("label_event", (action, label)))
 
     def prune_stale(self, max_age: float = PEER_STALE_SEC) -> None:
         now = time.time()
@@ -1106,6 +1315,12 @@ class MessageServer:
             if not data:
                 break
             buffer += data.decode("utf-8", errors="ignore")
+            if len(buffer) > MAX_INBOUND_LINE_BYTES and "\n" not in buffer:
+                # A peer streaming a huge payload with no newline delimiter would
+                # grow this buffer without bound. Real messages are tiny; treat
+                # this as a broken/hostile stream and drop the connection.
+                self.ui_queue.put(("status", f"Dropping {addr[0]}: oversized message with no delimiter."))
+                break
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 line = line.strip()
@@ -1653,6 +1868,12 @@ class ChairsideReadyAlertApp:
         # wake-recovery block in that method. Seeded in start_network (NOT here)
         # so a long idle between app launch and Start can't read as a wake.
         self._last_tick_monotonic: Optional[float] = None
+        # Monotonic timestamp of the last off-thread local-IP refresh; throttles
+        # _maybe_refresh_local_ips to once per LOCAL_IP_REFRESH_SEC.
+        self._last_ip_refresh_monotonic: Optional[float] = None
+        # Cache of rendered alert-WAV bytes keyed by (sound_name, amplitude) so
+        # an identical alert isn't re-synthesized in pure Python on every play.
+        self._wav_cache: dict = {}
         self.local_ips = local_ipv4_addresses()
         self.online_labels: list[str] = []
         self._duplicate_name_detected = False
@@ -1661,6 +1882,12 @@ class ChairsideReadyAlertApp:
         self.local_ip = detect_local_ip()
         self.auto_start_done = False
         self._diag_lines: deque[str] = deque(maxlen=500)
+        # Capture otherwise-invisible Tk callback exceptions (after-callbacks,
+        # bindings, commands). Tk's default handler writes to stderr, which does
+        # not exist in a frozen Store build, so such failures vanished silently.
+        # Installed now that self._diag_lines exists; it's only ever invoked
+        # later, on the main thread, during mainloop.
+        self.root.report_callback_exception = self._report_tk_callback_exception
         self._diag_win: Optional[tk.Toplevel] = None
         self._diag_text: Optional[tk.Text] = None
         self._tray_diag_lines: deque[str] = deque(maxlen=300)
@@ -2122,8 +2349,17 @@ class ChairsideReadyAlertApp:
                 return
             try:
                 conn, _addr = sock.accept()
-            except OSError:
+            except socket.timeout:
+                # Normal: the 1.0s accept timeout lets us re-check _quitting.
                 continue
+            except OSError:
+                # A REAL socket error (the listener died, not just an idle
+                # timeout). socket.timeout is an OSError subclass, so it must be
+                # caught first above; reaching here means accept() would keep
+                # failing instantly. Stop the thread rather than spinning at
+                # 100% CPU. Focus-from-second-instance is non-critical, and the
+                # next launch's stale-lock path already tolerates no server.
+                return
             try:
                 with conn:
                     data = conn.recv(128).decode("utf-8", errors="ignore").strip()
@@ -4181,19 +4417,39 @@ class ChairsideReadyAlertApp:
         self._lan_health_check_id = None
 
     def _check_lan_health(self) -> None:
+        # Recurring (not one-shot): re-arm every cycle so an outage that begins
+        # MID-SESSION -- a daytime firewall-policy push that disables the
+        # Private-profile rules, a switch that starts dropping broadcasts -- is
+        # surfaced too, not only an empty LAN at the 25s startup mark. The
+        # earlier one-shot only ever fired once per start_network. The dialog
+        # de-dupes itself, and the discovery branch of the queue closes it once
+        # a peer beacon arrives, so re-checking is cheap and non-spammy.
         self._lan_health_check_id = None
-        if not self._network_running:
-            return
-        if self.discovery and self.discovery.snapshot():
-            return
-        if self._lan_health_dialog is not None:
-            try:
-                if self._lan_health_dialog.winfo_exists():
-                    return
-            except tk.TclError:
-                pass
-            self._lan_health_dialog = None
-        self._open_lan_health_help_dialog()
+        try:
+            if not self._network_running:
+                return
+            if self.discovery and self.discovery.snapshot():
+                return
+            if self._lan_health_dialog is not None:
+                try:
+                    if self._lan_health_dialog.winfo_exists():
+                        return
+                except tk.TclError:
+                    pass
+                self._lan_health_dialog = None
+            self._open_lan_health_help_dialog()
+        finally:
+            # Keep watching while the network is up (Windows-only, like the
+            # scheduler). Cancelled by stop_network -> _cancel_lan_health_check.
+            if (
+                self._network_running
+                and not self._quitting
+                and sys.platform == "win32"
+            ):
+                try:
+                    self._lan_health_check_id = self.root.after(25000, self._check_lan_health)
+                except tk.TclError:
+                    pass
 
     def _open_lan_health_help_dialog(self) -> None:
         t = self._current_theme
@@ -5300,10 +5556,31 @@ class ChairsideReadyAlertApp:
         self._sync_after_id = self.root.after(1500, self._sync_peer_clients_tick)
 
     def _sync_peer_clients_tick(self) -> None:
+        # This 1.5s tick is the heart of weekend self-healing: it detects the
+        # sleep gap, posts system_wake, prunes stale peers, and rebuilds dead
+        # sockets. The pre-hardening version put its re-arm (_schedule_sync_loop)
+        # as the LAST unguarded statement, so a single transient exception
+        # anywhere above it (a TclError during a theme rebuild, an OSError from
+        # IP resolution on a NIC that just dropped on wake) left the loop
+        # un-rescheduled -- and the very recovery code meant to survive
+        # sleep/wake silently stopped running. Now the body runs under a guard
+        # and the re-arm lives in a finally, so one bad tick skips work instead
+        # of ending the loop.
         self._sync_after_id = None
         if not self._network_running or not self.discovery:
             return
+        try:
+            self._run_sync_tick_body()
+        except Exception as exc:
+            self._diag_lines.append(f"[{now_str()}] sync tick body failed: {exc}")
+        finally:
+            # Re-arm only while the network is still up (stop_network cancels
+            # the loop) and we're not quitting, so the finally can't resurrect
+            # a deliberately-stopped loop.
+            if self._network_running and not self._quitting:
+                self._schedule_sync_loop()
 
+    def _run_sync_tick_body(self) -> None:
         # --- Windows sleep/wake recovery (dependency-free) -------------------
         # root.after timers don't fire while the machine is asleep, so a tick
         # arriving far later than its 1.5s cadence means we almost certainly
@@ -5313,7 +5590,8 @@ class ChairsideReadyAlertApp:
         # wake path: post ('system_wake', None) and let the UI-thread queue
         # drain call _handle_system_wake (honoring the queue-only threading
         # rule). _last_tick_monotonic is seeded in start_network, so the very
-        # first tick after Start can't read as a wake event.
+        # first tick after Start can't read as a wake event. (Re-arm is handled
+        # by the caller's finally; this early return still triggers it.)
         now_mono = time.monotonic()
         if self._last_tick_monotonic is not None and (
             now_mono - self._last_tick_monotonic > WAKE_GAP_SEC
@@ -5325,14 +5603,22 @@ class ChairsideReadyAlertApp:
                 "bouncing LAN to rebuild any sleep-broken sockets."
             )
             self.queue.put(("system_wake", None))
-            self._schedule_sync_loop()
             return
         self._last_tick_monotonic = now_mono
 
-        # Refresh our own IPs each tick (cheap) so an overnight DHCP lease change
-        # for THIS machine is reflected in beacon self-filtering and the
-        # manual-IP skip below without needing a full network restart.
-        self.local_ips = local_ipv4_addresses()
+        # Refresh our own IPs occasionally, on a background thread (NOT the
+        # blocking per-tick getaddrinfo this used to do on the UI thread), so an
+        # overnight DHCP lease change is still reflected without a full restart.
+        self._maybe_refresh_local_ips()
+
+        # Defense-in-depth: if the discovery listen thread silently died (it
+        # shouldn't -- its loop now self-heals -- but a never-anticipated
+        # exception could), restart discovery so beacons flow again without
+        # waiting for a full LAN bounce.
+        if not self.discovery.is_listen_alive():
+            self._append_diag("Discovery listener was not alive -- restarting discovery.")
+            self._restart_discovery()
+            return
 
         self.discovery.prune_stale()
         self.discovery.update_label(self.label_var.get().strip())
@@ -5390,7 +5676,60 @@ class ChairsideReadyAlertApp:
                 self.peer_clients[ip] = client
 
         self._merge_online_labels(snap, now)
-        self._schedule_sync_loop()
+
+    def _maybe_refresh_local_ips(self) -> None:
+        """Kick off a background refresh of this machine's IP set, at most every
+        LOCAL_IP_REFRESH_SEC. local_ipv4_addresses() does a blocking getaddrinfo
+        and opens a UDP socket, so running it inline on the UI thread every 1.5s
+        (as the old code did) risked freezing the app for seconds when DNS/mDNS
+        is slow after a weekend, and churned ~40 sockets/min for an address that
+        almost never changes. The result is applied back on the UI thread via
+        the queue ('local_ips')."""
+        now_mono = time.monotonic()
+        last = self._last_ip_refresh_monotonic
+        if last is not None and (now_mono - last) < LOCAL_IP_REFRESH_SEC:
+            return
+        self._last_ip_refresh_monotonic = now_mono
+        threading.Thread(target=self._refresh_local_ips_worker, daemon=True).start()
+
+    def _refresh_local_ips_worker(self) -> None:
+        try:
+            ips = local_ipv4_addresses()
+        except Exception:
+            return
+        self.queue.put(("local_ips", ips))
+
+    def _apply_local_ips(self, ips: set) -> None:
+        if not ips:
+            return
+        self.local_ips = ips
+        # Update discovery's OWN reference too. LanDiscovery stored the set it
+        # was constructed with; rebinding only our attribute would never reach
+        # its listen-loop self-filtering or directed-broadcast derivation.
+        if self.discovery is not None:
+            self.discovery.local_ips = ips
+
+    def _restart_discovery(self) -> None:
+        """Stop and recreate just the LanDiscovery layer (listen + broadcast),
+        leaving the TCP server/clients alone. Cheaper than a full LAN bounce and
+        used by the listen-thread liveness watchdog. Runs on the UI thread; only
+        touches LanDiscovery + Tk vars (no cross-thread Tk)."""
+        if not self._network_running:
+            return
+        old = self.discovery
+        if old is not None:
+            try:
+                old.stop()
+            except Exception:
+                pass
+        label = self.label_var.get().strip()
+        try:
+            port = int(self.port_var.get().strip())
+        except ValueError:
+            port = DEFAULT_PORT
+        self.discovery = LanDiscovery(label, port, self.local_ips, self.queue)
+        self._sync_discovery_label_state()
+        self.discovery.start()
 
     @staticmethod
     def _udp_labels_from_snap(snap: dict[str, dict], now: float) -> set[str]:
@@ -5436,6 +5775,10 @@ class ChairsideReadyAlertApp:
             return
 
         self.local_ips = local_ipv4_addresses()
+        # We just resolved IPs synchronously; defer the first background refresh
+        # by LOCAL_IP_REFRESH_SEC so the sync tick doesn't redundantly re-resolve
+        # on its very first run.
+        self._last_ip_refresh_monotonic = time.monotonic()
         try:
             self.server = MessageServer("0.0.0.0", port, self.queue)
             self.server.start()
@@ -5625,39 +5968,92 @@ class ChairsideReadyAlertApp:
     def _on_whimsy_complete(self) -> None:
         self._anim_player = None
 
+    def _report_tk_callback_exception(self, exc, val, tb) -> None:
+        """Tk routes uncaught exceptions from after-callbacks, bindings, and
+        commands here. Capture them durably (the startup log FIRST -- it doesn't
+        depend on a healthy UI -- then the in-app diagnostic) so the
+        self-healing loops' failure modes leave a forensic trail instead of
+        vanishing. This logs; it does not by itself resurrect a loop -- the
+        try/finally re-arms in _process_ui_queue and the sync tick do that."""
+        try:
+            text = "".join(traceback.format_exception(exc, val, tb))
+        except Exception:
+            text = f"{exc}: {val}"
+        _append_startup_log("Tk callback exception:\n" + text)
+        try:
+            self._diag_lines.append(f"[{now_str()}] Tk callback exception: {val}")
+        except Exception:
+            pass
+
     def _process_ui_queue(self) -> None:
-        while True:
+        # This pump is the ONLY path background threads use to reach the UI:
+        # incoming Ready alerts, peer presence, AND the system_wake recovery
+        # signal that powers weekend sleep/wake recovery. It MUST NOT die. The
+        # earlier version put the root.after re-arm as the last statement,
+        # outside any guard -- so a single uncaught TclError/KeyError from one
+        # handler (a malformed payload, a widget destroyed mid-theme-switch)
+        # left the pump un-rescheduled and the app silently stopped delivering
+        # every incoming alert and never processed another wake event, with no
+        # crash and (in a frozen build) no stderr. Now each item is dispatched
+        # under its own guard and the re-arm lives in a finally, mirroring
+        # _check_log_rollover.
+        try:
+            while True:
+                try:
+                    kind, payload = self.queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._dispatch_ui_event(kind, payload)
+                except Exception as exc:
+                    # Append to the in-memory deque directly (pure list op --
+                    # cannot itself raise during a teardown race the way the
+                    # widget-touching _append_diag could).
+                    self._diag_lines.append(f"[{now_str()}] UI queue handler '{kind}' failed: {exc}")
+        finally:
+            if not self._quitting:
+                try:
+                    self.root.after(120, self._process_ui_queue)
+                except tk.TclError:
+                    pass
+
+    def _dispatch_ui_event(self, kind: str, payload) -> None:
+        if kind == "status":
+            # Routine connect/retry/disconnect stays in Connection log only so the
+            # banner stays on "On LAN" / Waiting unless we add explicit error kinds later.
+            self._append_diag(str(payload))
+        elif kind == "discovery":
+            if self.discovery:
+                snap = self.discovery.snapshot()
+                self._merge_online_labels(snap, time.time())
+                if snap and self._lan_health_dialog is not None:
+                    self._close_lan_health_help_dialog()
+        elif kind == "network":
+            self._handle_network_payload(payload)
+        elif kind == "tray_action":
+            self._dispatch_tray_action(str(payload))
+        elif kind == "focus_request":
+            self._show_main_window()
+        elif kind == "labels_snapshot":
+            inc_labels, inc_removed = payload
+            self._merge_remote_labels_snapshot(inc_labels, inc_removed)
+        elif kind == "label_event":
+            action, label = payload
+            self._apply_remote_label_event(action, label)
+        elif kind == "license":
+            self._on_license_refresh_result(bool(payload))
+        elif kind == "system_wake":
+            self._handle_system_wake()
+        elif kind == "local_ips":
+            self._apply_local_ips(payload)
+        elif kind == "bell":
+            # Audible fallback when sound playback fails, routed through the
+            # queue so the bell is rung on the MAIN thread (Tk calls from the
+            # sound worker thread are the off-main-thread access we must avoid).
             try:
-                kind, payload = self.queue.get_nowait()
-            except queue.Empty:
-                break
-            if kind == "status":
-                # Routine connect/retry/disconnect stays in Connection log only so the
-                # banner stays on "On LAN" / Waiting unless we add explicit error kinds later.
-                self._append_diag(str(payload))
-            elif kind == "discovery":
-                if self.discovery:
-                    snap = self.discovery.snapshot()
-                    self._merge_online_labels(snap, time.time())
-                    if snap and self._lan_health_dialog is not None:
-                        self._close_lan_health_help_dialog()
-            elif kind == "network":
-                self._handle_network_payload(payload)
-            elif kind == "tray_action":
-                self._dispatch_tray_action(str(payload))
-            elif kind == "focus_request":
-                self._show_main_window()
-            elif kind == "labels_snapshot":
-                inc_labels, inc_removed = payload
-                self._merge_remote_labels_snapshot(inc_labels, inc_removed)
-            elif kind == "label_event":
-                action, label = payload
-                self._apply_remote_label_event(action, label)
-            elif kind == "license":
-                self._on_license_refresh_result(bool(payload))
-            elif kind == "system_wake":
-                self._handle_system_wake()
-        self.root.after(120, self._process_ui_queue)
+                self.root.bell()
+            except tk.TclError:
+                pass
 
     def _handle_network_payload(self, payload: dict) -> None:
         msg_type = payload.get("type")
@@ -5786,40 +6182,56 @@ class ChairsideReadyAlertApp:
         step(0)
 
     def _play_alert_sound(self, alert_sound: str = "", alert_volume: int = 70) -> None:
-        threading.Thread(target=self._play_alert_sound_worker, args=(alert_sound, alert_volume), daemon=True).start()
-
-    def _play_alert_sound_worker(self, alert_sound: str = "", alert_volume: int = 70) -> None:
+        # Resolve the sound name + volume HERE, on the main thread. The worker
+        # must not read the alert_sound_var Tk StringVar (off-main-thread Tk
+        # access is the documented macOS-crash hazard); pass it concrete values.
         try:
-            sound_name = (alert_sound.strip() if alert_sound.strip() else self.alert_sound_var.get().strip())
-            volume = max(0, min(100, int(alert_volume))) / 100.0
+            sound_name = alert_sound.strip() if alert_sound.strip() else self.alert_sound_var.get().strip()
         except Exception:
+            sound_name = ""
+        if not sound_name:
             sound_name = ALERT_SOUND_OPTIONS[0]
-            volume = 0.7
+        try:
+            volume = max(0, min(100, int(alert_volume)))
+        except Exception:
+            volume = 70
+        threading.Thread(
+            target=self._play_alert_sound_worker, args=(sound_name, volume), daemon=True
+        ).start()
 
-        sequence = self._sound_sequence(sound_name)
-        if not sequence:
-            self.root.bell()
+    def _play_alert_sound_worker(self, sound_name: str, alert_volume: int) -> None:
+        volume = max(0, min(100, int(alert_volume))) / 100.0
+        try:
+            wav_bytes = self._wav_bytes_for(sound_name, volume)
+        except Exception:
+            self.queue.put(("bell", None))   # ring on the main thread
+            return
+        if not wav_bytes:
+            self.queue.put(("bell", None))
             return
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             temp_wav = tmp.name
+            tmp.write(wav_bytes)
+        proc = None
         try:
-            self._write_wave_file(temp_wav, sequence, volume)
             if sys.platform.startswith("win"):
                 import winsound
 
                 winsound.PlaySound(temp_wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
             elif sys.platform == "darwin":
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     ["afplay", "-v", f"{max(0.0, min(2.0, volume * 2.0)):.2f}", temp_wav],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             else:
-                self.root.bell()
+                self.queue.put(("bell", None))
         except Exception:
-            self.root.bell()
+            self.queue.put(("bell", None))
         finally:
-            threading.Thread(target=self._cleanup_temp_file_later, args=(temp_wav,), daemon=True).start()
+            threading.Thread(
+                target=self._cleanup_temp_file_later, args=(temp_wav, proc), daemon=True
+            ).start()
 
     def _sound_sequence(self, sound_name: str) -> list[tuple[int, int, int]]:
         sounds = {
@@ -5841,31 +6253,58 @@ class ChairsideReadyAlertApp:
         }
         return sounds.get(sound_name, sounds[ALERT_SOUND_OPTIONS[0]])
 
-    def _write_wave_file(self, path: str, sequence: list[tuple[int, int, int]], volume: float) -> None:
+    def _wav_bytes_for(self, sound_name: str, volume: float) -> bytes:
+        """Rendered WAV bytes for (sound, volume), memoized. The waveform was
+        previously re-synthesized in pure Python on EVERY play; an identical
+        alert (same sound, same volume -- the common case) now hits the cache."""
         max_amplitude = int(32767 * max(0.0, min(1.0, volume)))
         if max_amplitude <= 0:
             max_amplitude = 500
-        samples = []
+        key = (sound_name, max_amplitude)
+        cached = self._wav_cache.get(key)
+        if cached is not None:
+            return cached
+        data = self._render_wav_bytes(self._sound_sequence(sound_name), max_amplitude)
+        # 15 sounds x a few volumes is tiny; bound it anyway so it can't grow.
+        if len(self._wav_cache) > 64:
+            self._wav_cache.clear()
+        self._wav_cache[key] = data
+        return data
+
+    def _render_wav_bytes(self, sequence: list[tuple[int, int, int]], max_amplitude: int) -> bytes:
+        frame_data = bytearray()
         for frequency, duration_ms, gap_ms in sequence:
             tone_frames = int(ALERT_SAMPLE_RATE * (duration_ms / 1000.0))
             for i in range(tone_frames):
                 t = i / ALERT_SAMPLE_RATE
                 value = int(max_amplitude * math.sin(2 * math.pi * frequency * t))
-                samples.append(value)
+                frame_data.extend(value.to_bytes(2, byteorder="little", signed=True))
             gap_frames = int(ALERT_SAMPLE_RATE * (gap_ms / 1000.0))
-            for _ in range(gap_frames):
-                samples.append(0)
-        with wave.open(path, "wb") as wav:
+            frame_data.extend(b"\x00\x00" * gap_frames)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav:
             wav.setnchannels(1)
             wav.setsampwidth(2)
             wav.setframerate(ALERT_SAMPLE_RATE)
-            frame_data = bytearray()
-            for sample in samples:
-                frame_data.extend(int(sample).to_bytes(2, byteorder="little", signed=True))
             wav.writeframes(bytes(frame_data))
+        return buf.getvalue()
 
-    def _cleanup_temp_file_later(self, path: str) -> None:
-        time.sleep(3)
+    def _cleanup_temp_file_later(self, path: str, proc: "Optional[subprocess.Popen]" = None) -> None:
+        # Wait for the player to finish before deleting the temp WAV. For the
+        # macOS afplay child this also REAPS it (proc.wait), so repeated alerts
+        # over a long uptime don't leave a trail of zombie processes. Bounded so
+        # a hung player can't pin this thread (or a zombie) forever.
+        if proc is not None:
+            try:
+                proc.wait(timeout=30)
+            except Exception:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
+        else:
+            time.sleep(3)
         try:
             if os.path.exists(path):
                 os.remove(path)
@@ -5912,7 +6351,15 @@ def _startup_log_path() -> str:
 
 def _append_startup_log(line: str) -> None:
     try:
-        with open(_startup_log_path(), "a", encoding="utf-8") as f:
+        path = _startup_log_path()
+        try:
+            if os.path.getsize(path) > STARTUP_LOG_MAX_BYTES:
+                # Rotate (keep one previous generation) so the log can't grow
+                # without bound across launches and lifecycle events.
+                os.replace(path, path + ".1")
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {line}\n")
     except Exception:
         pass
@@ -5951,8 +6398,21 @@ def main() -> None:
         _append_startup_log("Second launch blocked by single-instance lock.")
         if _notify_existing_instance_focus():
             return
-        # If focus notify fails, lock may be stale after an unclean shutdown.
-        _append_startup_log("Focus notify failed; attempting stale-lock recovery.")
+        # Focus notify failed -- the lock MIGHT be stale after an unclean
+        # shutdown, OR a healthy first instance is simply slow to start its
+        # focus server (a ~1.5s window after launch). Before removing the lock,
+        # verify the recorded owner PID is actually dead. Removing a live
+        # owner's lock is the bug we must avoid: on POSIX it wouldn't release
+        # the live flock anyway, and on Windows it would let two instances run.
+        owner_pid = _read_lock_pid(lock_path)
+        if owner_pid is not None and owner_pid != os.getpid() and _pid_is_alive(owner_pid):
+            _append_startup_log(
+                f"Focus notify failed but lock owner PID {owner_pid} is alive; "
+                "not removing lock (likely a slow-starting first instance)."
+            )
+            _show_already_running_message()
+            return
+        _append_startup_log("Focus notify failed and lock owner is gone; attempting stale-lock recovery.")
         try:
             os.remove(lock_path)
             _append_startup_log("Removed stale instance lock; retrying acquire.")
