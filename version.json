@@ -1,7 +1,7 @@
 {
-  "version": "1.0.81",
+  "version": "1.0.82",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Reliability and resource improvements.\n\nThis release hardens the app so it keeps working on its own through the kinds of interruptions that previously required a restart -- most importantly when a computer sleeps for a long time (overnight or over a weekend) and then wakes:\n\n- Workstation discovery now recovers automatically after a sleep/wake, a network-adapter hiccup, or switching between Wi-Fi and a wired connection. Before, discovery could quietly stop and a station would appear offline until the app was restarted.\n\n- The internal alert-delivery loop and the wake-recovery loop can no longer be stopped by a single unexpected error, so incoming Ready alerts keep arriving even after days of uptime.\n\n- Beacons are now also sent to the local subnet broadcast, which reaches other workstations more reliably on some office networks.\n\nIt also lowers background resource use: this machine's network address is checked far less often and off the main thread (no more brief freezes), alert sounds are cached instead of regenerated on every play, and a few small memory/handle leaks were closed. No changes to how you use the app.",
+  "release_notes": "Maintenance and fixes.\n\n- macOS: fixes the celebratory \"Ready\" animations not appearing after a fresh install. The macOS installer was missing the animation files it needed to copy, so animations were silently disabled on new Macs. Fresh installs now include them.\n\n- Windows: the uninstaller is now delivered through the normal update path, so future fixes to it reach you without a full reinstall.\n\n- Trimmed leftover legacy files and unused code to keep the app lean. No change to how you use the app.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
@@ -17,6 +17,10 @@
     },
     "install_chairside_ready_alert.ps1": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/install_chairside_ready_alert.ps1",
+      "sha256": ""
+    },
+    "uninstall_chairside_ready_alert.ps1": {
+      "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/uninstall_chairside_ready_alert.ps1",
       "sha256": ""
     },
     "Install Chairside Ready Alert.bat": {

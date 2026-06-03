@@ -1367,7 +1367,7 @@ def play_animation(
 
 
 # ---------------------------------------------------------------------------
-# The 10 animations. Each `draw_anim_*` has the signature
+# The 9 animations. Each `draw_anim_*` has the signature
 #   def draw_anim_xxx(canvas, t, w, h, button):
 # where `t` is [0, 1] global time, w/h are the overlay canvas dimensions,
 # and `button` is the dict described on AnimationPlayer.play().
@@ -1494,117 +1494,6 @@ def draw_anim_surprise(canvas, t, w, h, button):
     if (l := _phase(t, 0.85, 0.95)) is not None:
         _walk(canvas, spot, edge_xy, l); return
     if (l := _phase(t, 0.95, 1.00)) is not None:
-        _hide_back(canvas, button, l, side); return
-
-
-# ---- Animation 2: Newspaper — single spot; chair appears; figure sits ----
-# Total ~13s. Walks over, a chair fades in, figure sits, reads the paper,
-# stands up, chair fades out, walks back. Single waypoint by design.
-def draw_anim_newspaper(canvas, t, w, h, button):
-    side = _pick_emerge_side(button, w)
-    edge_xy = _emerge_position(button, side, 0.0)
-    fj = _frac_jitter(button)
-    yj = _y_jitter(button, 25)
-    chair_spot = _wander_xy(button, side, w, 0.55 + fj, h * 0.62 + yj)
-
-    def _draw_chair(cx, cy):
-        # Simple side-view chair: seat (horizontal line), back (vertical
-        # line on the body-facing side), front legs.
-        seat_y = cy
-        seat_l, seat_r = cx - 22, cx + 22
-        canvas.create_line(seat_l, seat_y, seat_r, seat_y,
-                           fill=COLOR, width=STROKE, capstyle="round")
-        # Chair back rises on the side AWAY from where the figure faces.
-        back_x = seat_r if side > 0 else seat_l
-        canvas.create_line(back_x, seat_y, back_x, seat_y - 32,
-                           fill=COLOR, width=STROKE, capstyle="round")
-        # Two visible legs
-        canvas.create_line(seat_l + 2, seat_y, seat_l + 2, seat_y + 22,
-                           fill=COLOR, width=STROKE, capstyle="round")
-        canvas.create_line(seat_r - 2, seat_y, seat_r - 2, seat_y + 22,
-                           fill=COLOR, width=STROKE, capstyle="round")
-
-    def _draw_newspaper(cx, cy, head_pan):
-        # Open newspaper held in both hands, slightly translated by the
-        # head pan to look like the figure is glancing left/right while reading.
-        nx1 = cx - 30 + head_pan * 0.2
-        nx2 = cx + 30 + head_pan * 0.2
-        ny1 = cy - 18
-        ny2 = cy + 16
-        canvas.create_rectangle(nx1, ny1, nx2, ny2,
-                                outline=COLOR, width=STROKE, fill="")
-        for i in range(4):
-            ly = ny1 + 6 + i * 6
-            canvas.create_line(nx1 + 4, ly, nx2 - 4, ly,
-                               fill=COLOR, width=1)
-        # Center fold
-        canvas.create_line((nx1 + nx2) / 2, ny1, (nx1 + nx2) / 2, ny2,
-                           fill=COLOR, width=1)
-
-    if (l := _phase(t, 0.00, 0.06)) is not None:
-        _emerge(canvas, button, l, side); return
-    if (l := _phase(t, 0.06, 0.18)) is not None:
-        _walk(canvas, edge_xy, chair_spot, l); return
-    if (l := _phase(t, 0.18, 0.24)) is not None:
-        # Chair fades in: stroke gets thicker as l → 1. Figure stands beside
-        # the chair, looking down at it.
-        chair_alpha_stroke = max(1, int(l * STROKE + 0.5))
-        # Draw a partial chair
-        seat_y = chair_spot[1]
-        canvas.create_line(chair_spot[0] - 22, seat_y, chair_spot[0] + 22,
-                           seat_y, fill=COLOR, width=chair_alpha_stroke,
-                           capstyle="round")
-        if l > 0.5:
-            _draw_chair(chair_spot[0], chair_spot[1])
-        # Figure beside chair, body leaning toward it
-        figure_x = chair_spot[0] - side * 35
-        draw_figure_pose(canvas, figure_x, chair_spot[1] - 5,
-                         body_angle=270 + side * 8)
-        return
-    if (l := _phase(t, 0.24, 0.86)) is not None:
-        # SITTING: hip on the chair seat; legs forward (horizontal-ish);
-        # body upright; arms holding the newspaper at face level.
-        _draw_chair(chair_spot[0], chair_spot[1])
-        hip_x = chair_spot[0]
-        hip_y = chair_spot[1] - 2
-        # Legs forward: angles point AWAY from the chair back (i.e., in
-        # the figure's facing direction). When facing right (side > 0
-        # peek-from-right means figure walked right; chair back is on right;
-        # figure faces LEFT toward where it came from). Pick the direction
-        # so the legs extend over the seat edge toward open space.
-        leg_dir = 0 if side > 0 else 180  # legs extend toward the open side
-        # Upper leg roughly horizontal in leg_dir; lower leg vertical down.
-        upper = leg_dir
-        lower = 90  # straight down to put feet on the floor
-        head_pan = math.sin(l * 6) * 6
-        draw_figure_pose(
-            canvas, hip_x, hip_y,
-            body_angle=270,
-            left_leg=(upper, lower), right_leg=(upper, lower),
-            # Arms angled forward and downward to "hold" the paper at face level
-            left_arm=(leg_dir + 30, leg_dir + 5)
-                if leg_dir == 0 else (leg_dir - 30, leg_dir - 5),
-            right_arm=(leg_dir + 30, leg_dir + 5)
-                if leg_dir == 0 else (leg_dir - 30, leg_dir - 5),
-        )
-        # Newspaper held in front of face — position based on head location
-        head_y = hip_y - LEN_BODY - HEAD_R - 2
-        paper_x = hip_x + (1 if leg_dir == 0 else -1) * 24
-        _draw_newspaper(paper_x, head_y + 6, head_pan)
-        return
-    if (l := _phase(t, 0.86, 0.92)) is not None:
-        # Stand up beside chair, chair fades out
-        chair_alpha_stroke = max(1, int((1 - l) * STROKE + 0.5))
-        canvas.create_line(chair_spot[0] - 22, chair_spot[1],
-                           chair_spot[0] + 22, chair_spot[1],
-                           fill=COLOR, width=chair_alpha_stroke,
-                           capstyle="round")
-        figure_x = chair_spot[0] - side * 35
-        draw_figure_pose(canvas, figure_x, chair_spot[1] - 5)
-        return
-    if (l := _phase(t, 0.92, 0.96)) is not None:
-        _walk(canvas, chair_spot, edge_xy, l); return
-    if (l := _phase(t, 0.96, 1.00)) is not None:
         _hide_back(canvas, button, l, side); return
 
 

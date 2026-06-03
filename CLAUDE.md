@@ -42,7 +42,7 @@ There is **no test suite, no linter config, and no CI for verifying code correct
 
 ## Repo layout traps
 
-- **`dental_messenger.py`** still sits in the repo root — it is the pre-rename legacy copy and is not referenced by installers or `version.json`. Do not edit it; it is slated for deletion. All changes belong in `chairside_ready_alert.py`.
+- **`dental_messenger.py`** (the pre-rename legacy copy) and `dental_messenger_config.json` were **deleted in 1.0.82** along with the stray tracked `__pycache__/dental_messenger.cpython-311.pyc`. They were never referenced by installers or `version.json`. All app logic lives in `chairside_ready_alert.py`; if you see references to `dental_messenger` in old commits, they are historical.
 - **Duplicated Windows installer.** `Chairside Ready Alert Windows Installer/` contains its own copies of `install_chairside_ready_alert.ps1`, `Install Chairside Ready Alert.bat`, and a sample `chairside_ready_alert_config.json`. The **root copies are canonical** (referenced by `version.json`); the subfolder is a packaging bundle. When changing the installer, update both or the bundle will drift.
 - **`index.html`** at the repo root is the public GitHub Pages landing page (`https://ayodoood.github.io/Chairside-Ready-Alert/`). It is unrelated to the app — do not confuse it for app UI. The previous `index.md` was replaced by this hand-written HTML page.
 

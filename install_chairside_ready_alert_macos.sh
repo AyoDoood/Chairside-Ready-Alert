@@ -309,6 +309,8 @@ for logo in logo.svg Logo.svg logo.png Logo.png; do
   fi
 done
 for support in \
+  "ready_animations.py" \
+  "ready_animation_picker.py" \
   "Install Chairside Ready Alert macOS.command" \
   "install_chairside_ready_alert_macos.sh" \
   "Install Chairside Ready Alert.bat" \

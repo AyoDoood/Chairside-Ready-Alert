@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.81"
+APP_VERSION = "1.0.82"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -230,8 +230,8 @@ TRIAL_DAYS = 7
 # Each value fires at most once per install (tracked in trial_reminders_shown).
 TRIAL_REMINDER_DAYS = (6, 3, 1)
 # Microsoft Store ProductId for the deep-link Buy URL ("ms-windows-store://pdp/?ProductId=...").
-# Leave blank until the Partner Center listing publishes a real ProductId; while
-# blank the Buy button falls back to STORE_PRODUCT_WEB_URL.
+# Populated from the published Partner Center listing. If ever blanked, the Buy
+# button falls back to STORE_PRODUCT_WEB_URL.
 STORE_PRODUCT_ID = "9NKDHB58JJC5"
 STORE_PRODUCT_WEB_URL = "https://apps.microsoft.com/detail/9NKDHB58JJC5"
 # Public FAQ & Troubleshooting page (GitHub Pages). Opened from the Help menu
@@ -774,9 +774,12 @@ class ConfigStore:
         self.path = path
         self.data = {
             "label": "",
+            # server_host is retained only for one-time migration of very old
+            # configs into manual_peer_ips (see load()); server_port is the live
+            # TCP-port persistence key. The old is_server flag was vestigial (the
+            # app is fully peer-to-peer) and has been removed.
             "server_host": "",
             "server_port": DEFAULT_PORT,
-            "is_server": False,
             "manual_peer_ips": "",
             "alert_sound": ALERT_SOUND_OPTIONS[0],
             "alert_volume": 50,
@@ -1890,7 +1893,6 @@ class ChairsideReadyAlertApp:
         self.root.report_callback_exception = self._report_tk_callback_exception
         self._diag_win: Optional[tk.Toplevel] = None
         self._diag_text: Optional[tk.Text] = None
-        self._tray_diag_lines: deque[str] = deque(maxlen=300)
         # Ready Messages log layout state — see _refresh_log_tabstop and
         # _refresh_separators. _max_body_width_px tracks the widest body
         # currently displayed (in pixels) so the right tab stop can sit
@@ -1900,8 +1902,6 @@ class ChairsideReadyAlertApp:
         # mutates.
         self._max_body_width_px: int = 0
         self._separator_frames: list[tk.Frame] = []
-        self._tray_diag_win: Optional[tk.Toplevel] = None
-        self._tray_diag_text: Optional[tk.Text] = None
         # T+25s post-start sentinel that surfaces a help dialog when no LAN
         # peers have appeared — typically because Windows Firewall has the
         # app's Private-profile rules disabled. See _check_lan_health.
@@ -3143,58 +3143,11 @@ class ChairsideReadyAlertApp:
         self._append_diag(msg)
 
     def _record_tray_diag(self, text: str) -> None:
-        line = f"{now_str()}  {text}"
-        self._tray_diag_lines.append(line)
-        if self._tray_diag_text is not None and self._tray_diag_text.winfo_exists():
-            self._tray_diag_text.configure(state="normal")
-            self._tray_diag_text.insert("end", line + "\n")
-            self._tray_diag_text.see("end")
-            self._tray_diag_text.configure(state="disabled")
-
-    def _open_tray_diagnostics_window(self) -> None:
-        if self._tray_diag_win is not None and self._tray_diag_win.winfo_exists():
-            self._tray_diag_win.lift()
-            self._tray_diag_win.focus_force()
-            return
-        win = tk.Toplevel(self.root)
-        win.title("Tray diagnostics")
-        win.geometry("700x360")
-        win.transient(self.root)
-        frame = ttk.Frame(win, padding=8)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(
-            frame,
-            text="Tray/menu bar status and fallback controls.",
-            style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(0, 6))
-
-        btn_row = ttk.Frame(frame)
-        btn_row.pack(fill="x", pady=(0, 6))
-        ttk.Button(btn_row, text="Retry Tray Start", command=self._ensure_tray_icon_started).pack(side="left")
-        ttk.Button(btn_row, text="Show Main", command=self._show_main_window).pack(side="left", padx=(6, 0))
-        ttk.Button(btn_row, text="Hide Main", command=self._hide_main_window).pack(side="left", padx=(6, 0))
-        ttk.Button(btn_row, text="Send Ready", command=self._send_ready_from_widget).pack(side="left", padx=(6, 0))
-        if not IS_FROZEN:
-            ttk.Button(btn_row, text="Check Updates", command=self._check_for_updates_clicked).pack(side="left", padx=(6, 0))
-
-        text = tk.Text(frame, height=14, wrap="word", font=_ui_font(9))
-        scroll = ttk.Scrollbar(frame, command=text.yview)
-        text.configure(yscrollcommand=scroll.set)
-        text.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        for line in self._tray_diag_lines:
-            text.insert("end", line + "\n")
-        text.see("end")
-        text.configure(state="disabled")
-
-        def on_close() -> None:
-            self._tray_diag_win = None
-            self._tray_diag_text = None
-            win.destroy()
-
-        self._tray_diag_win = win
-        self._tray_diag_text = text
-        win.protocol("WM_DELETE_WINDOW", on_close)
+        # Tray/menu-bar startup + action diagnostics. Routed to the (rotated)
+        # startup log so tray-visibility problems stay diagnosable from a file.
+        # The old in-app diagnostics viewer window was unreachable (no caller)
+        # and has been removed.
+        _append_startup_log(f"[tray] {text}")
 
     def _manifest_url_candidates(self, base_url: str) -> list[str]:
         base = str(base_url or "").strip()

@@ -126,49 +126,45 @@ verify it runs — that's effectively your test.
 | `privateNetworkClientServer` | LAN UDP broadcast (50506) and TCP messaging (50505). |
 
 No `internetClient` capability — the Store build makes no outbound internet
-calls of its own. The Microsoft Store SDK call to verify the user's
-subscription goes through the local Microsoft Store service, not through a
-third-party HTTPS endpoint, so it doesn't require declaring internet access.
+calls of its own (the in-app auto-updater is gated off when frozen). The
+Microsoft Store SDK call that reads the app's paid license
+(`StoreContext.GetAppLicenseAsync()` via the `winsdk` package) goes through the
+local Microsoft Store service, not a third-party HTTPS endpoint, so it doesn't
+require declaring internet access.
 
 ---
 
-## Configure the subscription Add-on (revenue model)
+## Pricing & trial (revenue model)
 
-The Microsoft Store build is **free to download** and gates functionality
-behind a **$1.99 USD / month subscription Add-on**. After your first
-submission is published (or accepted into Store), create the Add-on:
+The Microsoft Store build is a **one-time paid app at $14.99 USD** — not a free
+download with a subscription. (The earlier Add-on/subscription model was
+abandoned in 1.0.29 after an unresolvable `PEX-CatalogAvailabilityDataNotFound`
+state on Microsoft's catalog backend; the paywall window, `StoreHelper.exe`, the
+`.NET 8` build steps, and the `winrt-*` dependencies were all removed at that
+time and no longer exist in the code.)
 
-> Apps and games → Chairside Ready Alert → **Add-ons** → **New add-on**
+Set the price in Partner Center on the submission's **Pricing and availability**
+step — choose the **$14.99** base price tier. There is **no Add-on** to create.
 
-| Field | Value |
-|---|---|
-| Product type | Subscription |
-| Product ID | `ChairsideReadyAlert.Subscription.Monthly` |
-| Visibility | Public |
-| Renewal period | Monthly |
-| Pricing | $1.99 USD (closest tier) |
-| Free trial period | Optional (7 days is common for new subscribers) |
-| Display name | Chairside Ready Alert Monthly |
-| Description | Active subscription unlocks the app on this Microsoft account's devices. Up to 10 devices per account. Cancel any time in Microsoft Store. |
+Trial behavior is enforced **in-app** (frozen builds only), not by a Store
+Add-on — see "Trial / paid-license gating" in `CLAUDE.md` for the code map:
 
-> ⚠️ The Product ID **must match exactly** what the app code expects.
-> Search `chairside_ready_alert.py` for `SUBSCRIPTION_ADDON_PRODUCT_ID` —
-> if you change the constant in code, change it in Partner Center too,
-> and vice versa. They are not negotiated at runtime.
+1. On first launch the app stamps `first_launch_iso` into its config and grants
+   a `TRIAL_DAYS`-day trial (currently 7).
+2. Reminder dialogs fire once each at the `TRIAL_REMINDER_DAYS` thresholds.
+3. When the trial expires and the app is still unpaid, the Ready button shows a
+   "buy now?" prompt instead of sending; the LAN stack keeps running so the user
+   still appears online and unlocking needs no restart.
+4. The app recognizes a real purchase via
+   `Windows.Services.Store.StoreContext.GetAppLicenseAsync()` (the **`winsdk`**
+   package). `winsdk` **must** be bundled by the PyInstaller build / present in
+   the CI workflow, or paying users get locked out at trial end with no in-app
+   unlock path.
+5. The Buy button deep-links to
+   `ms-windows-store://pdp/?ProductId=<STORE_PRODUCT_ID>`, falling back to
+   `STORE_PRODUCT_WEB_URL`.
 
-Once the Add-on is published:
-
-1. The app launches at $0 (free download).
-2. On first launch, the Microsoft Store paywall window appears. The user
-   clicks "Subscribe — $1.99 / month" and Microsoft Store overlay handles
-   the purchase.
-3. On subsequent launches, the app silently verifies the subscription is
-   still active (cached locally for 7 days for offline tolerance).
-4. If the user cancels in Microsoft Store, the next launch (after the
-   cache expires) shows the paywall again.
-
-The "network of 8 computers" use case is satisfied without per-seat
-licensing: a Microsoft account can install Store apps on **up to 10
-devices** by default, so a single $1.99/month subscription on a shared
-office Microsoft account covers the entire dental practice's
+The "network of N computers" use case needs no per-seat licensing: a Microsoft
+account can install Store apps on **up to 10 devices** by default, so a single
+$14.99 purchase on a shared office Microsoft account covers the practice's
 workstations.
