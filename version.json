@@ -1,7 +1,7 @@
 {
-  "version": "1.0.82",
+  "version": "1.0.83",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Maintenance and fixes.\n\n- macOS: fixes the celebratory \"Ready\" animations not appearing after a fresh install. The macOS installer was missing the animation files it needed to copy, so animations were silently disabled on new Macs. Fresh installs now include them.\n\n- Windows: the uninstaller is now delivered through the normal update path, so future fixes to it reach you without a full reinstall.\n\n- Trimmed leftover legacy files and unused code to keep the app lean. No change to how you use the app.",
+  "release_notes": "Microsoft Store purchase unlock fix.\n\n- Fixes a problem where buying the app from the Microsoft Store after the free trial ended did not always unlock it. The app now reliably recognizes a completed purchase: it re-checks your license automatically in the background after launch, so a purchase made in the Store app unlocks within about a minute without restarting.\n\n- Once your purchase is confirmed it stays unlocked -- a brief hiccup talking to the Store can no longer re-lock a paying customer.\n\n- The \"I purchased -- refresh\" button now tells you what happened (unlocked, no purchase found yet, or Store unavailable) instead of appearing to do nothing.\n\n- Hardened the Store license check so it can't silently fail on some PCs.\n\nIf you are still locked out after purchasing: confirm the Microsoft Store is signed in with the same account you bought with, open Microsoft Store > Library > Get updates, then reopen the app.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

@@ -121,7 +121,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.82"
+APP_VERSION = "1.0.83"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -229,6 +229,14 @@ TRIAL_DAYS = 7
 # Days-remaining thresholds at which the app pops a one-time reminder dialog.
 # Each value fires at most once per install (tracked in trial_reminders_shown).
 TRIAL_REMINDER_DAYS = (6, 3, 1)
+# While the app is unpaid (trial or expired), re-query the Store license on this
+# cadence so a purchase made directly in the Store app -- or one that propagates
+# a short while after the in-app Buy click -- unlocks WITHOUT a restart. Polling
+# stops the moment a purchase is confirmed (paid_unlocked latches True).
+LICENSE_POLL_INTERVAL_MS = 60_000
+# Single source of truth for the manual refresh button's resting label, shared
+# by the banner builder and the post-refresh feedback that restores it.
+REFRESH_BTN_LABEL = "I purchased — refresh"
 # Microsoft Store ProductId for the deep-link Buy URL ("ms-windows-store://pdp/?ProductId=...").
 # Populated from the published Partner Center listing. If ever blanked, the Buy
 # button falls back to STORE_PRODUCT_WEB_URL.
@@ -275,19 +283,57 @@ def _query_store_license_paid() -> Optional[bool]:
         return None
     try:
         import asyncio
-        # winsdk is the maintained Python projection of the Windows SDK. It
-        # must be added to the PyInstaller spec for Store builds; until it is,
-        # this import fails and we report 'unknown' (None), leaving callers
-        # to fall back to the cached paid_unlocked flag.
+        # winsdk is the maintained Python projection of the Windows SDK and is
+        # bundled into Store builds (pip install winsdk + --collect-all winsdk).
+        # If it is ever dropped from the build this import fails and we report
+        # 'unknown' (None), leaving callers to fall back to cached paid_unlocked.
         from winsdk.windows.services.store import StoreContext  # type: ignore
     except Exception:
         return None
+    # Two correctness requirements that, if missed, made this silently return
+    # None on EVERY frozen build pre-1.0.83 and left paying customers locked:
+    #   1. WinRT calls need a COM apartment on the calling thread. This runs on
+    #      a fresh daemon worker that has none, so make a best-effort MTA init.
+    #      The winsdk apartment API lives in winsdk.system and has shifted
+    #      across versions; winsdk ALSO auto-initializes an MTA apartment on the
+    #      first WinRT call for a thread with none, so the read still works if
+    #      the explicit init below doesn't apply.
+    #   2. get_app_license_async() returns a WinRT IAsyncOperation, NOT a native
+    #      coroutine. Passing it straight to asyncio.run() raises "a coroutine
+    #      was expected"; it must be awaited inside an `async def`.
+    # Every failure path returns None (fail-closed) -- never falls open to paid.
+    apartment_inited = False
+    uninit_fn = None
     try:
-        ctx = StoreContext.get_default()
-        lic = asyncio.run(ctx.get_app_license_async())
+        from winsdk.system import init_apartment, uninit_apartment
+        try:
+            from winsdk.system import ApartmentType
+            init_apartment(ApartmentType.MULTI_THREADED)
+        except Exception:
+            init_apartment()  # wheels where MTA is the default argument
+        uninit_fn = uninit_apartment
+        apartment_inited = True
+    except Exception:
+        # Explicit init unavailable on this wheel -- rely on winsdk's auto-MTA
+        # init on first use. Don't uninit what we didn't init.
+        apartment_inited = False
+    try:
+        async def _read_license():
+            ctx = StoreContext.get_default()
+            return await ctx.get_app_license_async()
+
+        # Bound the call so a wedged Store backend can't leave this worker (and
+        # the COM apartment) hung, nor strand the 'Checking...' button forever.
+        lic = asyncio.run(asyncio.wait_for(_read_license(), timeout=15))
         return bool(lic.is_active and not lic.is_trial)
     except Exception:
         return None
+    finally:
+        if apartment_inited and uninit_fn is not None:
+            try:
+                uninit_fn()
+            except Exception:
+                pass
 
 
 def _version_tuple(s: str) -> tuple[int, int, int]:
@@ -1960,6 +2006,9 @@ class ChairsideReadyAlertApp:
         # Trial UI + license refresh (frozen builds only; helpers no-op otherwise).
         self.root.after(300, self._apply_trial_state_to_ui)
         self.root.after(800, self._kick_store_license_refresh)
+        # Recurring re-check so a purchase made in the Store app -- or one that
+        # propagates after launch -- unlocks without a restart.
+        self.root.after(5_000, self._schedule_license_poll)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         if sys.platform == "darwin":
             try:
@@ -2768,41 +2817,149 @@ class ChairsideReadyAlertApp:
         st = self._trial_status()
         return st["enforce"] and st["expired"] and not st["paid"]
 
-    def _kick_store_license_refresh(self) -> None:
-        """Background-thread Store license check. Posts a ('license', bool) onto
-        the UI queue when the Store returns a definite answer; an unknown
-        result (None) is dropped so we keep using the cached paid_unlocked flag."""
+    def _kick_store_license_refresh(self, user_initiated: bool = False) -> None:
+        """Background-thread Store license check. Posts ('license', (result,
+        user_initiated)) onto the UI queue, where result is True/False/None.
+        A background poll with an unknown (None) result simply changes nothing;
+        a user-initiated refresh always reports back so the 'I purchased'
+        button can show real feedback instead of looking dead."""
         if not IS_FROZEN:
             return
 
         def _worker():
             result = _query_store_license_paid()
-            if result is None:
-                return
             try:
-                self.queue.put(("license", bool(result)))
+                self.queue.put(("license", (result, bool(user_initiated))))
             except Exception:
                 pass
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _on_license_refresh_result(self, paid: bool) -> None:
-        """UI-thread handler for the Store license check result."""
+    def _on_license_refresh_result(self, paid, user_initiated: bool = False) -> None:
+        """UI-thread handler for the Store license check. `paid` is the tri-state
+        from _query_store_license_paid: True (owned), False (active-but-trial or
+        inactive), or None (couldn't reach the Store).
+
+        paid_unlocked is a ONE-WAY LATCH: once the Store confirms a purchase we
+        never demote it on a later False or None. A just-converted or flaky read
+        that momentarily reports 'trial' must not re-lock a paying customer."""
+        # Diagnostic visibility so a real-machine smoke test can tell a Store
+        # 'unknown' (None) apart from a definite 'not paid' (False) vs 'paid'.
+        # Background polls log only on change to avoid one line per minute;
+        # a user-initiated refresh always logs.
+        result_word = (
+            "paid" if paid is True
+            else "not paid (Store trial/inactive)" if paid is False
+            else "unknown (Store unreachable or winsdk error)"
+        )
+        if user_initiated or result_word != getattr(self, "_last_license_log", None):
+            self._last_license_log = result_word
+            self._append_diag(f"Store license check: {result_word}.")
         prev = bool(self.config_store.data.get("paid_unlocked", False))
-        if prev == paid:
-            return
-        self.config_store.data["paid_unlocked"] = bool(paid)
-        try:
-            self.config_store.save()
-        except Exception:
-            pass
-        self._apply_trial_state_to_ui()
-        # If a paid license just appeared and the network was held back, start it.
-        if paid and not self._network_running:
+        new = prev or (paid is True)
+        if new != prev:
+            self.config_store.data["paid_unlocked"] = new
             try:
-                self._auto_start_network()
+                self.config_store.save()
             except Exception:
                 pass
+            self._apply_trial_state_to_ui()
+            # A paid license just appeared; if the network was held back, start it.
+            if new and not self._network_running:
+                try:
+                    self._auto_start_network()
+                except Exception:
+                    pass
+        if new:
+            # Unlocked for good -- stop the recurring unpaid re-check.
+            self._cancel_license_poll()
+        if user_initiated:
+            self._show_license_refresh_feedback(unlocked=new, raw=paid)
+
+    def _show_license_refresh_feedback(self, unlocked: bool, raw) -> None:
+        """Restore the manual refresh button and tell the user exactly what the
+        Store said, so the button is never a silent no-op."""
+        btn = getattr(self, "_trial_banner_refresh_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(text=REFRESH_BTN_LABEL, state="normal")
+            except Exception:
+                pass
+        try:
+            if unlocked:
+                messagebox.showinfo(
+                    f"{APP_TITLE} — Unlocked",
+                    "Purchase confirmed. Thank you! Chairside Ready Alert is now "
+                    "unlocked on this PC.",
+                )
+            elif raw is None:
+                messagebox.showwarning(
+                    f"{APP_TITLE} — Store unavailable",
+                    "Couldn't reach the Microsoft Store to verify your purchase "
+                    "just now.\n\n"
+                    "Check your internet connection and try again in a moment. "
+                    "If it keeps failing, fully quit and reopen the app.",
+                )
+            else:
+                messagebox.showwarning(
+                    f"{APP_TITLE} — No purchase found yet",
+                    "The Microsoft Store doesn't yet show a completed purchase for "
+                    "the account signed in on this PC.\n\n"
+                    "• If you just bought it, wait a minute and click "
+                    "\"I purchased — refresh\" again — purchases can take a short "
+                    "while to register.\n"
+                    "• Make sure the Microsoft Store is signed in with the SAME "
+                    "account you purchased with.\n"
+                    "• You can also open Microsoft Store → Library → Get updates, "
+                    "then reopen this app.",
+                )
+        except Exception:
+            pass
+
+    def _on_refresh_button_click(self) -> None:
+        """Manual 'I purchased — refresh' handler. Shows an immediate 'Checking…'
+        state, then surfaces the Store's answer via _show_license_refresh_feedback."""
+        btn = getattr(self, "_trial_banner_refresh_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(text="Checking…", state="disabled")
+            except Exception:
+                pass
+        self._kick_store_license_refresh(user_initiated=True)
+
+    def _schedule_license_poll(self) -> None:
+        """Arm the recurring unpaid Store-license re-check. Frozen builds only."""
+        if not IS_FROZEN:
+            return
+        self._cancel_license_poll()
+        if bool(self.config_store.data.get("paid_unlocked", False)):
+            return  # Already unlocked -- nothing to poll for.
+        self._license_poll_id = self.root.after(
+            LICENSE_POLL_INTERVAL_MS, self._license_poll_tick
+        )
+
+    def _license_poll_tick(self) -> None:
+        """Fire one background license check while unpaid, then re-arm. Stops
+        once paid_unlocked latches True (so a paid user isn't polled forever)."""
+        self._license_poll_id = None
+        if not IS_FROZEN:
+            return
+        if bool(self.config_store.data.get("paid_unlocked", False)):
+            return
+        self._kick_store_license_refresh()
+        self._license_poll_id = self.root.after(
+            LICENSE_POLL_INTERVAL_MS, self._license_poll_tick
+        )
+
+    def _cancel_license_poll(self) -> None:
+        poll_id = getattr(self, "_license_poll_id", None)
+        if poll_id is None:
+            return
+        try:
+            self.root.after_cancel(poll_id)
+        except Exception:
+            pass
+        self._license_poll_id = None
 
     def _open_buy_store_listing(self) -> None:
         """Take the user to the Microsoft Store listing to purchase. Prefers the
@@ -2899,8 +3056,8 @@ class ChairsideReadyAlertApp:
         self._trial_banner_buy_btn.pack(side="right", padx=(4, 8))
         self._trial_banner_refresh_btn = tk.Button(
             self._trial_banner_inner,
-            text="I purchased — refresh",
-            command=self._kick_store_license_refresh,
+            text=REFRESH_BTN_LABEL,
+            command=self._on_refresh_button_click,
             font=_ui_font(10),
         )
         self._trial_banner_refresh_btn.pack(side="right", padx=(4, 4))
@@ -5994,7 +6151,11 @@ class ChairsideReadyAlertApp:
             action, label = payload
             self._apply_remote_label_event(action, label)
         elif kind == "license":
-            self._on_license_refresh_result(bool(payload))
+            if isinstance(payload, tuple) and len(payload) == 2:
+                result, user_initiated = payload
+            else:
+                result, user_initiated = payload, False
+            self._on_license_refresh_result(result, user_initiated)
         elif kind == "system_wake":
             self._handle_system_wake()
         elif kind == "local_ips":
