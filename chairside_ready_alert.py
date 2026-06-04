@@ -26,6 +26,7 @@ import tempfile
 import threading
 import time
 import traceback
+import uuid
 import tkinter as tk
 import wave
 from datetime import datetime
@@ -121,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.83"
+APP_VERSION = "1.0.84"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -153,6 +154,18 @@ DEFAULT_PORT = 50505
 DISCOVERY_PORT = 50506
 BEACON_INTERVAL = 2.5
 BEACON_VERSION = 1
+# Per-process identifier stamped into every discovery beacon so a machine can
+# recognize and ignore its OWN beacons by ID -- independent of IP. This is the
+# robust fix for the multi-homed self-collision: a station with two NICs on the
+# same subnet (e.g. Ethernet + a still-connected Wi-Fi) would otherwise hear its
+# own beacon loop back via the second adapter with a source IP that
+# local_ipv4_addresses() never enumerated, fail the "is this me?" IP check, and
+# flag itself as a duplicate station ("Another computer may be using the same
+# station name"). Filtering on this ID makes self-detection correct no matter
+# how many adapters a machine has. Older peers omit the field -- they fall back
+# to the IP-based self-filter and ignore the extra field in our beacons, so it
+# is fully backward-compatible.
+_INSTANCE_ID = uuid.uuid4().hex
 PEER_STALE_SEC = 12.0
 BUFFER_SIZE = 4096
 # --- TCP liveness (fix: "left on overnight -> peers discovered but Ready
@@ -954,6 +967,7 @@ class LanDiscovery:
             payload = json.dumps({
                 "type": "label_event",
                 "v": BEACON_VERSION,
+                "iid": _INSTANCE_ID,
                 "action": action,
                 "label": str(label),
                 "ts": time.time(),
@@ -1063,6 +1077,7 @@ class LanDiscovery:
                     {
                         "type": "dm_beacon",
                         "v": BEACON_VERSION,
+                        "iid": _INSTANCE_ID,
                         "label": self.label,
                         "tcp": self.tcp_port,
                         # Eventual-consistency snapshot so newly-online peers
@@ -1156,6 +1171,15 @@ class LanDiscovery:
         except json.JSONDecodeError:
             return
         if int(obj.get("v", 0)) != BEACON_VERSION:
+            return
+        # Drop our OWN beacons by instance ID, regardless of source IP. The
+        # ip-in-local_ips check above misses a self-beacon that loops back via a
+        # second adapter whose address local_ipv4_addresses() never enumerated
+        # (a multi-homed Ethernet + Wi-Fi box). Matching our per-process
+        # _INSTANCE_ID catches it no matter which interface the echo arrived on,
+        # so a machine can never mistake itself for a duplicate station. (Older
+        # peers send no "iid"; their beacons never match and process normally.)
+        if obj.get("iid") == _INSTANCE_ID:
             return
         msg_type = obj.get("type")
         if msg_type == "dm_beacon":
