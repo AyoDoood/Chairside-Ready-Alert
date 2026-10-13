@@ -559,39 +559,55 @@ ALERT_SOUND_OPTIONS = [
     "Classic Pager",
 ]
 
-# Layout themes for the main UI.
+# Layout themes for the main UI (refreshed in 1.0.85: calmer page tints,
+# borderless shadowed cards, a two-tone accent for gradients, plus Ocean and
+# a dark Midnight theme). Keys:
+#   accent / accent2 -- gradient ends for the Ready button, chips, slider, logo
+#   card_border      -- soft dividers, chip outlines; card outline on dark only
+#   emph_dark        -- the newest incoming Ready's sender name in the log
+#   highlight        -- the newest incoming Ready's card color (and its arrival
+#                       flash fades into it from a stronger accent tint)
+#   ink              -- stick-figure animation strokes
 THEMES: dict[str, dict] = {
     "Modern Blue": {
-        "bg": "#f0f4ff", "card_bg": "#ffffff", "accent": "#2563eb", "accent_text": "#ffffff",
-        "title": "#1e40af", "text": "#1e293b", "sub": "#64748b", "card_border": "#bdc6d5",
-        "log_bg": "#f8faff", "log_text": "#475569", "status": "#16a34a",
-        "input_bg": "#f8fafc", "input_border": "#cbd5e1", "slider_track": "#dde6f5",
-        # emph_dark: drives the bold/larger color of the most recent incoming
-        # Ready in the log (and the second-most-recent one too). Darker than
-        # 'title' so the message reads as a step beyond the usual brand color.
-        "emph_dark": "#1e3a8a",
-        # highlight: starting background color of the recent1 flash animation.
-        # Fades to log_bg over ~600ms. Light enough to read emph_dark text over,
-        # bright enough to catch the eye on arrival.
-        "highlight": "#dbeafe",
+        "bg": "#eef2f8", "card_bg": "#ffffff", "accent": "#2563eb", "accent2": "#4f46e5",
+        "accent_text": "#ffffff", "title": "#0f172a", "text": "#1e293b", "sub": "#64748b",
+        "card_border": "#e2e8f0", "log_bg": "#f8fafc", "log_text": "#475569",
+        "status": "#16a34a", "input_bg": "#f8fafc", "input_border": "#cbd5e1",
+        "slider_track": "#e2e8f0", "chip_bg": "#f1f5f9", "emph_dark": "#1e3a8a",
+        "highlight": "#e0e7ff", "ink": "#1e293b",
     },
     "Sage Clinic": {
-        "bg": "#f2f5ee", "card_bg": "#ffffff", "accent": "#4a7c59", "accent_text": "#ffffff",
-        "title": "#2d5a3d", "text": "#2c3e2d", "sub": "#6b8f6c", "card_border": "#b4c4b5",
-        "log_bg": "#f7faf7", "log_text": "#5a7a5b", "status": "#2d8a4e",
-        "input_bg": "#f7faf7", "input_border": "#c8dfc9", "slider_track": "#c8dfc9",
-        "emph_dark": "#1b3a26",
-        "highlight": "#d9ecdc",
+        "bg": "#eef3ec", "card_bg": "#ffffff", "accent": "#3f7d58", "accent2": "#2f6f6a",
+        "accent_text": "#ffffff", "title": "#1f3a2b", "text": "#253528", "sub": "#6b7f6d",
+        "card_border": "#dfe7da", "log_bg": "#f7faf6", "log_text": "#4d6450",
+        "status": "#2d8a4e", "input_bg": "#f7faf6", "input_border": "#c8dfc9",
+        "slider_track": "#dfe7da", "chip_bg": "#eef3eb", "emph_dark": "#1b3a26",
+        "highlight": "#dcebdf", "ink": "#253528",
     },
     "Rose Quartz": {
-        "bg": "#fdf2f4", "card_bg": "#ffffff", "accent": "#e11d48", "accent_text": "#ffffff",
-        "title": "#be123c", "text": "#3d0a18", "sub": "#9c5a6c", "card_border": "#fbc9d4",
-        "log_bg": "#fff5f7", "log_text": "#9c5a6c", "status": "#059669",
-        "input_bg": "#fff5f7", "input_border": "#fbc9d4", "slider_track": "#fbc9d4",
-        # Rose Quartz: title is a bright crimson, not actually dark. Use the
-        # near-black 'text' color so the emphasized line still reads as "dark".
-        "emph_dark": "#3d0a18",
-        "highlight": "#fde0e7",
+        "bg": "#fbf0f3", "card_bg": "#ffffff", "accent": "#e11d48", "accent2": "#db2777",
+        "accent_text": "#ffffff", "title": "#4c0519", "text": "#3d0a18", "sub": "#9c5a6c",
+        "card_border": "#f6dbe2", "log_bg": "#fff7f8", "log_text": "#7a4252",
+        "status": "#059669", "input_bg": "#fff7f8", "input_border": "#fbc9d4",
+        "slider_track": "#f6dbe2", "chip_bg": "#fdf0f3", "emph_dark": "#4c0519",
+        "highlight": "#ffe4ea", "ink": "#3d0a18",
+    },
+    "Ocean": {
+        "bg": "#eaf6f6", "card_bg": "#ffffff", "accent": "#0d9488", "accent2": "#0284c7",
+        "accent_text": "#ffffff", "title": "#0f3d3e", "text": "#16343a", "sub": "#5f7c80",
+        "card_border": "#d5ebea", "log_bg": "#f5fbfb", "log_text": "#3f5f63",
+        "status": "#059669", "input_bg": "#f5fbfb", "input_border": "#bfe0de",
+        "slider_track": "#d5ebea", "chip_bg": "#e9f5f4", "emph_dark": "#134e4a",
+        "highlight": "#ccf0ec", "ink": "#16343a",
+    },
+    "Midnight": {
+        "bg": "#0b1120", "card_bg": "#141c2f", "accent": "#3b82f6", "accent2": "#06b6d4",
+        "accent_text": "#ffffff", "title": "#f1f5f9", "text": "#e2e8f0", "sub": "#8b9ab3",
+        "card_border": "#1f2a40", "log_bg": "#0f172a", "log_text": "#b6c2d6",
+        "status": "#34d399", "input_bg": "#1b2540", "input_border": "#2a3a5c",
+        "slider_track": "#1f2a40", "chip_bg": "#1b2540", "emph_dark": "#ffffff",
+        "highlight": "#1e3a5f", "ink": "#e2e8f0",
     },
 }
 DEFAULT_THEME = "Modern Blue"
@@ -697,6 +713,17 @@ def _migrate_old_log_line(text: str) -> str:
         if body and rest.startswith("[") and rest.endswith("]"):
             return f"{body}\t{rest}"
     return text
+
+
+def _split_log_line(text: str) -> tuple[str, str]:
+    """'body\t[ts]' (any historical layout, see _migrate_old_log_line) ->
+    ('body', 'ts'). ts is '' when the line has none."""
+    text = _migrate_old_log_line(text.rstrip())
+    body, _sep, rest = text.partition("\t")
+    ts = rest.strip()
+    if ts.startswith("[") and ts.endswith("]"):
+        ts = ts[1:-1].strip()
+    return body.strip(), ts
 
 
 def _strip_seconds_from_ts(ts: str) -> str:
@@ -1643,178 +1670,776 @@ class MessageClient:
             pass
 
 
+# ---------------------------------------------------------------------------
+# Drawing helpers + custom widgets (1.0.85 visual refresh).
+#
+# Everything is plain Tk Canvas drawing (smooth polygons, lines, ovals,
+# text), so it renders the same on Windows and macOS with no extra
+# dependencies. Geometry goes through _px() so it scales with the font's
+# pixel size: Tk on Windows draws a point as ~1.33px (96 dpi) vs ~1px on
+# macOS, and fixed pixel sizes tuned on one platform would crowd the text
+# on the other. Check marks and the play triangle are drawn as shapes, not
+# glyphs, so they never depend on a font having the character.
+# ---------------------------------------------------------------------------
+
+_UI_SCALE = 1.0
+
+
+def _init_ui_scale(root: tk.Misc) -> None:
+    global _UI_SCALE
+    try:
+        s = float(root.tk.call("tk", "scaling"))
+    except Exception:
+        s = 1.0
+    _UI_SCALE = max(1.0, min(3.0, s))
+
+
+def _px(n: float) -> int:
+    return int(round(n * _UI_SCALE))
+
+
+def _mix(c1: str, c2: str, t: float) -> str:
+    """Blend two #rrggbb colors. t=0 -> c1, t=1 -> c2."""
+    t = max(0.0, min(1.0, t))
+    try:
+        a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+        b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    except (ValueError, IndexError):
+        return c1
+    return "#%02x%02x%02x" % tuple(int(round(x + (y - x) * t)) for x, y in zip(a, b))
+
+
+def _is_dark(color: str) -> bool:
+    try:
+        r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    except (ValueError, IndexError):
+        return False
+    return (0.299 * r + 0.587 * g + 0.114 * b) < 90
+
+
+def _rrect(cv: tk.Canvas, x0, y0, x1, y1, r, **kw):
+    r = max(0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
+           x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+    return cv.create_polygon(pts, smooth=True, **kw)
+
+
+def _gradient_rrect(cv: tk.Canvas, x0, y0, x1, y1, r, c1: str, c2: str) -> None:
+    """Left-to-right gradient inside a rounded rectangle. The rounded ends
+    are filled with 1px lines clipped to the corner arcs; the straight
+    middle uses a bounded number of bands so wide buttons stay cheap to
+    redraw during hover / press animations."""
+    _rrect(cv, x0, y0, x1, y1, r, fill=_mix(c1, c2, 0.5), outline="")
+    if c1 == c2:
+        _rrect(cv, x0, y0, x1, y1, r, fill=c1, outline="")
+        return
+    w = x1 - x0
+    if w < 3:
+        return
+    r = min(r, w / 2, (y1 - y0) / 2)
+
+    def col(x):
+        return _mix(c1, c2, (x - x0) / w)
+
+    x = x0 + 1
+    while x < x0 + r:
+        d = x0 + r - x
+        inset = r - math.sqrt(max(0.0, r * r - d * d))
+        cv.create_line(x, y0 + inset + 1, x, y1 - inset - 1, fill=col(x))
+        x += 1
+    mid_l, mid_r = x0 + r, x1 - r
+    bands = max(1, min(96, int((mid_r - mid_l) / 3)))
+    bw = (mid_r - mid_l) / bands
+    for i in range(bands):
+        bx0 = mid_l + i * bw
+        cv.create_rectangle(bx0, y0, bx0 + bw + 1, y1, fill=col(bx0 + bw / 2), outline="")
+    x = x1 - r
+    while x < x1 - 1:
+        d = x - (x1 - r)
+        inset = r - math.sqrt(max(0.0, r * r - d * d))
+        cv.create_line(x, y0 + inset + 1, x, y1 - inset - 1, fill=col(x))
+        x += 1
+
+
+def _draw_check(cv: tk.Canvas, cx, cy, size, color: str, width: float = 2.0) -> None:
+    s = size / 2
+    cv.create_line(cx - s, cy, cx - s * 0.25, cy + s * 0.7, cx + s, cy - s * 0.7,
+                   fill=color, width=width, capstyle="round", joinstyle="round")
+
+
+_AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#ea580c", "#059669", "#0891b2", "#ca8a04"]
+
+
+def _initials(name: str) -> str:
+    parts = name.split()
+    if len(parts) >= 2 and parts[-1].isdigit():
+        return parts[0][0].upper() + parts[-1][:2]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return name[:1].upper() or "?"
+
+
+def _avatar_color(name: str) -> str:
+    return _AVATAR_COLORS[sum(ord(c) * (i + 1) for i, c in enumerate(name)) % len(_AVATAR_COLORS)]
+
+
+def _elide(font: tkfont.Font, text: str, max_w: int) -> str:
+    """Trim `text` with an ellipsis so it fits in max_w pixels."""
+    if max_w <= 0 or font.measure(text) <= max_w:
+        return text
+    while text and font.measure(text + "…") > max_w:
+        text = text[:-1]
+    return text + "…"
+
+
 class RoundedCard(tk.Frame):
-    """A Frame whose background is a Canvas-drawn rounded rectangle."""
+    """A Frame whose background is a Canvas-drawn rounded card with a soft
+    layered drop shadow. The 1px outline is only drawn when `border` is set
+    (dark themes, where a shadow alone doesn't separate card from page)."""
 
     def __init__(self, parent, bg: str = "#ffffff", outer_bg: str = "#f0f4ff",
-                 radius: int = 12, padding: int = 14, border: str | None = None, **kw) -> None:
+                 radius: int = 16, padding: int = 14, border: str | None = None, **kw) -> None:
         super().__init__(parent, bg=outer_bg, **kw)
         self._card_bg = bg
         self._outer_bg = outer_bg
         self._border = border
-        self._r = radius
-        self._pad = padding
+        self._r = _px(radius)
+        self._pad = _px(padding)
+        # Room around the card for the shadow: left, top, right, bottom.
+        self._m = (_px(6), _px(4), _px(6), _px(10))
+        # True: the inner frame is stretched to the card's full height (the
+        # Ready Messages card, so the log grows with the window). False: the
+        # card hugs its content.
+        self.fill_height = False
 
         self._cv = tk.Canvas(self, highlightthickness=0, bd=0, bg=outer_bg)
         self._cv.pack(fill="both", expand=True)
 
         self.inner_frame = tk.Frame(self._cv, bg=bg)
-        self._win = self._cv.create_window(padding, padding,
-                                            window=self.inner_frame, anchor="nw")
+        self._win = self._cv.create_window(self._m[0] + self._pad, self._m[1] + self._pad,
+                                           window=self.inner_frame, anchor="nw")
         self._cv.bind("<Configure>", self._on_cv_resize)
         self.inner_frame.bind("<Configure>", self._on_inner_resize)
 
     def _on_cv_resize(self, e: tk.Event) -> None:
         self._draw(e.width, e.height)
         # Stretch inner content to full card width so rows (e.g. Ready) can center in the window.
-        iw = max(1, int(e.width) - 2 * self._pad)
+        iw = max(1, int(e.width) - 2 * self._pad - self._m[0] - self._m[2])
         self._cv.itemconfigure(self._win, width=iw)
+        if self.fill_height:
+            ih = max(1, int(e.height) - 2 * self._pad - self._m[1] - self._m[3])
+            self._cv.itemconfigure(self._win, height=ih)
 
     def _on_inner_resize(self, e: tk.Event) -> None:
         # Height follows content; width comes from canvas (fill="x") + _on_cv_resize.
-        self._cv.configure(height=e.height + self._pad * 2)
+        # A fill_height card requests its content's NATURAL height (not the
+        # stretched height it was just given) so it can still shrink.
+        h = self.inner_frame.winfo_reqheight() if self.fill_height else e.height
+        self._cv.configure(height=h + self._pad * 2 + self._m[1] + self._m[3])
 
     def _draw(self, w: int, h: int) -> None:
         if w < 4 or h < 4:
             return
         self._cv.delete("rr")
-        # Inset the right and bottom edges by 1px so the 1-pixel outline
-        # falls entirely within the canvas. Without the inset, Tk centers
-        # the stroke on the polygon vertex; the half at x=w/y=h is past
-        # the last valid canvas pixel and gets clipped, leaving the right
-        # and bottom borders rendering at half intensity (or invisibly,
-        # depending on theme / DPI). The left and top edges happen to
-        # survive better because the canvas bg often matches the outline
-        # color closely enough to mask the same half-clip. Insetting
-        # makes all four sides render at full strength consistently.
-        # Cost: a 1px gutter on the right and bottom shows the canvas's
-        # own bg (outer_bg), which is the page background -- effectively
-        # invisible against the surrounding layout.
-        right = w - 1
-        bot = h - 1
-        r = min(self._r, right // 2, bot // 2)
-        pts = [r, 0,  right-r, 0,  right, 0,  right, r,
-               right, bot-r,  right, bot,  right-r, bot,  r, bot,
-               0, bot,  0, bot-r,  0, r,  0, 0]
-        outline = self._border or ""
-        ow = 1 if self._border else 0
-        self._cv.create_polygon(pts, smooth=True, fill=self._card_bg,
-                                outline=outline, width=ow, tags="rr")
+        x0, y0 = self._m[0], self._m[1]
+        x1, y1 = w - self._m[2] - 1, h - self._m[3] - 1
+        dark = _is_dark(self._outer_bg)
+        shadow = "#000000" if dark else "#0f172a"
+        k = 2.2 if dark else 1.0
+        for grow, a, dy in ((_px(6), 0.025, _px(4)), (_px(4), 0.04, _px(3)),
+                            (_px(2), 0.06, _px(2)), (1, 0.08, 1)):
+            _rrect(self._cv, x0 - grow, y0 - grow + dy, x1 + grow, y1 + grow + dy,
+                   self._r + grow, fill=_mix(self._outer_bg, shadow, a * k),
+                   outline="", tags="rr")
+        _rrect(self._cv, x0, y0, x1, y1, self._r, fill=self._card_bg,
+               outline=self._border or "", width=1 if self._border else 0, tags="rr")
         self._cv.tag_lower("rr")
 
     def update_colors(self, bg: str, outer_bg: str, border: str | None = None) -> None:
         self._card_bg = bg
         self._outer_bg = outer_bg
-        if border is not None:
-            self._border = border
+        self._border = border
         self.configure(bg=outer_bg)
         self._cv.configure(bg=outer_bg)
         self.inner_frame.configure(bg=bg)
         self._draw(self._cv.winfo_width(), self._cv.winfo_height())
 
 
-class RoundedLogPanel(tk.Frame):
-    """Ready Messages log: rounded outline (theme card_border), log_bg fill, no focus ring."""
+class ReadyLog(tk.Canvas):
+    """The Ready Messages log.
 
-    def __init__(
-        self,
-        parent,
-        *,
-        log_bg: str,
-        log_fg: str,
-        border: str,
-        card_bg: str,
-        font: tuple,
-        height_lines: int = 15,
-        radius: int = 6,
-        **kw,
-    ) -> None:
-        super().__init__(parent, bg=card_bg, **kw)
-        self._log_bg = log_bg
-        self._border = border
-        self._card_bg = card_bg
-        self._r = radius
-        # _inset=0 (previously 2) lets the log Text widget reach the very
-        # edges of the panel canvas. Since 1.0.70 removed the panel's own
-        # border, the inset no longer needs to keep the log content away
-        # from a visible outline -- and zeroing it removes the last 2px
-        # of indent between the body's first character and the "Ready
-        # Messages" header above the log.
-        self._inset = 0
+    Incoming Readys are the point of the app, so they dominate: the newest
+    sits at the very BOTTOM in a large highlighted card (colored avatar,
+    "Room 3 / is ready for you", NEW badge, pulse ring on arrival); the
+    second-newest is a slightly larger bold row just above it.
 
-        self._cv = tk.Canvas(self, highlightthickness=0, bd=0, bg=card_bg)
-        self._cv.pack(fill="both", expand=True)
+    Outgoing confirmations ("Sent → Room 2, Doctor") are deliberately quiet
+    -- small muted text with a hollow check -- and are always inserted
+    ABOVE the two newest incoming Readys (see _insert_outgoing), so a Ready
+    alert stands out both visually and by sitting lowest in the box. Same
+    ordering rule the app has used since outgoing lines were introduced.
 
-        # padx=0 (not the previous 6) so the body's leftmost character
-        # aligns with the "Ready Messages" header above the log instead
-        # of sitting ~10px to the right of it. Combined with _inset=0
-        # and left_x=0 in _refresh_log_tabstop, the body's first char
-        # lands at the very left edge of the panel.
-        self.log = tk.Text(
-            self._cv,
-            height=height_lines,
-            wrap="word",
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            padx=4,
-            pady=4,
-            bg=log_bg,
-            fg=log_fg,
-            insertbackground=log_fg,
-            font=font,
-        )
-        self._win = self._cv.create_window(self._inset, self._inset, window=self.log, anchor="nw")
-        self._cv.bind("<Configure>", self._on_cv_resize)
+    Entries: ("in", sender, ts) | ("out", targets, ts) | ("raw", text, "").
+    """
 
-    def _on_cv_resize(self, e: tk.Event) -> None:
-        if e.widget != self._cv:
+    ARRIVE_SEC = 1.2
+
+    def __init__(self, parent, theme: dict) -> None:
+        super().__init__(parent, highlightthickness=0, bd=0, bg=theme["card_bg"],
+                         height=_px(180))
+        self.th = theme
+        self.entries: list[tuple[str, str, str]] = []
+        self._arrive_t0 = -10.0
+        self._sent_t0 = -10.0
+        self._sent_entry: Optional[tuple] = None
+        self._after_id: Optional[str] = None
+        self._fonts: dict = {}
+        self.bind("<Configure>", lambda _e: self._draw())
+
+    # ---- model ----
+    def add_incoming(self, sender: str, ts: str, animate: bool = True) -> None:
+        self.entries.append(("in", sender, ts))
+        if animate:
+            self._arrive_t0 = time.monotonic()
+        self._kick()
+
+    def add_outgoing(self, targets: str, ts: str, animate: bool = True) -> None:
+        entry = ("out", targets, ts)
+        self._insert_outgoing(entry)
+        if animate:
+            self._sent_entry, self._sent_t0 = entry, time.monotonic()
+        self._kick()
+
+    def add_raw(self, text: str) -> None:
+        self._insert_outgoing(("raw", text, ""))
+        self._kick()
+
+    def _insert_outgoing(self, entry: tuple) -> None:
+        incoming = [i for i, e in enumerate(self.entries) if e[0] == "in"]
+        if len(incoming) >= 2:
+            self.entries.insert(incoming[-2], entry)
+        elif incoming:
+            self.entries.insert(incoming[-1], entry)
+        else:
+            self.entries.append(entry)
+
+    def trim(self, max_entries: int) -> None:
+        if len(self.entries) > max_entries:
+            del self.entries[:len(self.entries) - max_entries]
+            self._draw()
+
+    def clear(self) -> None:
+        self.entries.clear()
+        self._draw()
+
+    def set_theme(self, theme: dict) -> None:
+        self.th = theme
+        self.configure(bg=theme["card_bg"])
+        self._draw()
+
+    # ---- rendering ----
+    def _font(self, size: int, weight: str = "normal") -> tkfont.Font:
+        key = (size, weight)
+        f = self._fonts.get(key)
+        if f is None:
+            f = tkfont.Font(root=self, family=_ui_family(), size=size, weight=weight)
+            self._fonts[key] = f
+        return f
+
+    def _kick(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+        self._tick()
+
+    def _tick(self) -> None:
+        self._after_id = None
+        self._draw()
+        now = time.monotonic()
+        if now - self._arrive_t0 < self.ARRIVE_SEC or now - self._sent_t0 < self.ARRIVE_SEC:
+            try:
+                self._after_id = self.after(16, self._tick)
+            except tk.TclError:
+                pass
+
+    def _draw(self) -> None:
+        try:
+            self.delete("all")
+            W, H = self.winfo_width(), self.winfo_height()
+        except tk.TclError:
             return
-        w, h = int(e.width), int(e.height)
-        if w < 4 or h < 4:
+        if W < 50:
             return
-        self._draw(w, h)
-        iw = max(1, w - 2 * self._inset)
-        ih = max(1, h - 2 * self._inset)
-        self._cv.itemconfigure(self._win, width=iw, height=ih)
+        th = self.th
+        card = th["card_bg"]
+        sub = th["sub"]
+        border = th.get("card_border", "#e2e8f0")
+        right = W - _px(14)
+        if not self.entries:
+            self.create_text(W / 2, H / 2, text="No Ready alerts yet today",
+                             fill=_mix(sub, card, 0.25), font=self._font(11))
+            return
+        rows = list(self.entries)
+        y = H - _px(4)
+        if rows[-1][0] == "in":
+            _, name, ts = rows.pop()
+            k = min(1.0, (time.monotonic() - self._arrive_t0) / 0.9)
+            ch = _px(74)
+            slide = 1 - (1 - k) ** 3
+            y1 = H - _px(4)
+            y0 = y1 - ch + (1 - slide) * _px(18)
+            bgc = _mix(_mix(th["accent"], card, 0.55), th["highlight"], k)
+            _rrect(self, _px(2), y0, W - _px(2), y1, _px(14), fill=bgc, outline="")
+            self.create_rectangle(_px(2), y0 + _px(12), _px(6), y1 - _px(12),
+                                  fill=th["accent"], outline="")
+            ax, ay, ar = _px(42), (y0 + y1) / 2, _px(22)
+            if k < 1:
+                pr = ar + _px(4) + _px(16) * k
+                self.create_oval(ax - pr, ay - pr, ax + pr, ay + pr,
+                                 outline=_mix(_avatar_color(name), bgc, k), width=2.5)
+            self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=_avatar_color(name),
+                             outline="")
+            self.create_text(ax, ay, text=_initials(name), fill="#ffffff",
+                             font=self._font(12, "bold"))
+            pill_f = self._font(9, "bold")
+            pill_w = pill_f.measure("NEW") + _px(22)
+            ts_f = self._font(11, "bold")
+            name_f = self._font(18, "bold")
+            tx = ax + ar + _px(14)
+            name_max = right - max(pill_w, ts_f.measure(ts)) - _px(12) - tx
+            self.create_text(tx, ay - _px(10), text=_elide(name_f, name, name_max), anchor="w",
+                             fill=th["emph_dark"], font=name_f)
+            self.create_text(tx, ay + _px(14), text="is ready for you", anchor="w",
+                             fill=sub, font=self._font(11))
+            self.create_text(right, ay - _px(10), text=ts, anchor="e", fill=sub, font=ts_f)
+            _rrect(self, right - pill_w, ay + _px(4), right, ay + _px(24), _px(10),
+                   fill=th["accent"], outline="")
+            self.create_text(right - pill_w / 2, ay + _px(14), text="NEW",
+                             fill=th["accent_text"], font=pill_f)
+            y = y0 - _px(8)
+        # Older rows above, newest first going up.
+        first_in = True
+        for entry in reversed(rows):
+            kind, text, ts = entry
+            if kind == "in":
+                big = first_in
+                first_in = False
+                rh = _px(38 if big else 32)
+            else:
+                rh = _px(28)
+            if y - rh < 0:
+                break
+            cy = y - rh / 2
+            ts_f = self._font(10 if kind == "in" else 9)
+            ts_w = ts_f.measure(ts) if ts else 0
+            if kind == "in":
+                r = _px(13 if big else 11)
+                ax = _px(28)
+                self.create_oval(ax - r, cy - r, ax + r, cy + r, fill=_avatar_color(text),
+                                 outline="")
+                self.create_text(ax, cy, text=_initials(text), fill="#ffffff",
+                                 font=self._font(9 if not big else 10, "bold"))
+                nf = self._font(12 if big else 11, "bold")
+                tx = _px(52)
+                shown = _elide(nf, text, right - ts_w - _px(60) - tx)
+                self.create_text(tx, cy, text=shown, anchor="w", fill=th["text"], font=nf)
+                self.create_text(tx + nf.measure(shown) + _px(6), cy, text="ready",
+                                 anchor="w", fill=sub, font=self._font(11))
+            else:
+                if entry == self._sent_entry:
+                    k = min(1.0, (time.monotonic() - self._sent_t0) / 1.0)
+                    if k < 1:
+                        _rrect(self, _px(14), y - rh + 2, W - _px(10), y - 2, _px(8),
+                               fill=_mix(th["highlight"], card, k), outline="")
+                cr = _px(8)
+                ax = _px(28)
+                self.create_oval(ax - cr, cy - cr, ax + cr, cy + cr, outline=border, width=1.5)
+                _draw_check(self, ax, cy, _px(8), sub, width=1.6)
+                f = self._font(10)
+                label = ("Sent → " + text) if kind == "out" else text
+                self.create_text(_px(52), cy, text=_elide(f, label, right - ts_w - _px(16) - _px(52)),
+                                 anchor="w", fill=sub, font=f)
+            if ts:
+                self.create_text(right, cy, text=ts, anchor="e", fill=sub, font=ts_f)
+            self.create_line(_px(52), y - rh, right, y - rh, fill=border)
+            y -= rh
 
-    def _draw(self, w: int, h: int) -> None:
-        self._cv.delete("logbg")
-        r = min(self._r, w // 2, h // 2)
-        pts = [
-            r, 0,
-            w - r, 0,
-            w, 0,
-            w, r,
-            w, h - r,
-            w, h,
-            w - r, h,
-            r, h,
-            0, h,
-            0, h - r,
-            0, r,
-            0, 0,
-        ]
-        outline = self._border or ""
-        ow = 1 if self._border else 0
-        self._cv.create_polygon(
-            pts, smooth=True, fill=self._log_bg, outline=outline, width=ow, tags="logbg"
-        )
-        self._cv.tag_lower("logbg")
 
-    def update_theme(self, log_bg: str, log_fg: str, border: str | None, card_bg: str) -> None:
-        self._log_bg = log_bg
-        self._border = border or ""
-        self._card_bg = card_bg
-        self.configure(bg=card_bg)
-        self._cv.configure(bg=card_bg)
-        self.log.configure(
-            bg=log_bg, fg=log_fg, insertbackground=log_fg, font=_ui_font(10),
-            highlightthickness=0, borderwidth=0,
-        )
-        w, h = self._cv.winfo_width(), self._cv.winfo_height()
-        if w > 4 and h > 4:
-            self._draw(w, h)
+class ReadyButton(tk.Canvas):
+    """The big Ready button: two-tone gradient, soft colored glow, a gentle
+    lift on hover, a press-in on click. After a successful send the app
+    calls show_sent(), which turns it green with a ripple and a check for
+    ~1.5s before it settles back to "Ready".
+
+    Exposes _bg / _bg2 / _fg / _text / _r / _body_inset so the stick-figure
+    animation's peek mask matches the visible button, not the glow margin."""
+
+    def __init__(self, parent, theme: dict, text: str = "Ready", command=None) -> None:
+        self._gm = (_px(12), _px(6), _px(12), _px(14))  # glow margins l, t, r, b
+        self._bh = _px(56)
+        super().__init__(parent, height=self._bh + self._gm[1] + self._gm[3], width=_px(300),
+                         highlightthickness=0, bd=0, bg=theme["card_bg"], cursor="hand2")
+        self._text = text
+        self._command = command
+        self._r = _px(16)
+        self._body_inset = self._gm
+        self._enabled = True
+        self._state = "idle"
+        self._sent_label = ""
+        self._sent_until = -10.0
+        self._anim_t0 = -10.0
+        self._after_id: Optional[str] = None
+        self._f_label = tkfont.Font(root=self, family=_ui_family(), size=17, weight="bold")
+        self._f_sent = tkfont.Font(root=self, family=_ui_family(), size=15, weight="bold")
+        self.set_theme(theme)
+        self.bind("<Configure>", lambda _e: self._draw())
+        self.bind("<Enter>", lambda _e: self._set_state("hover"))
+        self.bind("<Leave>", lambda _e: self._set_state("idle"))
+        self.bind("<ButtonPress-1>", lambda _e: self._set_state("press"))
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def set_theme(self, theme: dict) -> None:
+        self.th = theme
+        self.configure(bg=theme["card_bg"])
+        self._apply_colors()
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = bool(enabled)
+        self.configure(cursor="hand2" if enabled else "arrow")
+        self._apply_colors()
+
+    def _apply_colors(self) -> None:
+        if self._enabled:
+            self._bg, self._bg2 = self.th["accent"], self.th.get("accent2", self.th["accent"])
+        else:
+            self._bg = self._bg2 = "#9ca3af"
+        self._fg = self.th["accent_text"] if self._enabled else "#ffffff"
+        self._draw()
+
+    def set_canvas_size(self, width: int) -> None:
+        self.configure(width=width)
+        self._draw()
+
+    def show_sent(self, label: str) -> None:
+        now = time.monotonic()
+        self._sent_label = label
+        self._sent_until = now + 1.5
+        self._anim_t0 = now
+        self._animate()
+
+    def _set_state(self, s: str) -> None:
+        if not self._enabled:
+            s = "idle"
+        if self._state != s:
+            self._state = s
+            self._draw()
+
+    def _on_release(self, e: tk.Event) -> None:
+        inside = 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height()
+        self._state = "hover" if inside else "idle"
+        self._draw()
+        if inside and self._command:
+            self._command()
+
+    def _animate(self) -> None:
+        self._after_id = None
+        self._draw()
+        if time.monotonic() < self._sent_until + 0.35:
+            try:
+                self._after_id = self.after(16, self._animate)
+            except tk.TclError:
+                pass
+
+    def _draw(self) -> None:
+        try:
+            self.delete("all")
+            W = self.winfo_width()
+        except tk.TclError:
+            return
+        if W < 20:
+            return
+        th = self.th
+        card = th["card_bg"]
+        l, t, r, _b = self._gm
+        x0, y0, x1, y1 = l, t, W - r, t + self._bh
+        now = time.monotonic()
+        sent = now < self._sent_until
+        c1, c2 = self._bg, self._bg2
+        if sent:
+            c1, c2 = "#16a34a", "#0d9488"
+        if self._state == "hover":
+            c1, c2 = _mix(c1, "#ffffff", 0.08), _mix(c2, "#ffffff", 0.08)
+            y0 -= 1
+            y1 -= 1
+        elif self._state == "press":
+            c1, c2 = _mix(c1, "#000000", 0.12), _mix(c2, "#000000", 0.12)
+            x0, y0, x1, y1 = x0 + 3, y0 + 2, x1 - 3, y1 - 1
+        if self._enabled or sent:
+            glow = 0.55 if self._state != "press" else 0.3
+            for grow, a, dy in ((_px(10), 0.07, _px(8)), (_px(7), 0.11, _px(6)),
+                                (_px(4), 0.16, _px(4)), (_px(2), 0.22, _px(2))):
+                _rrect(self, x0 - grow + 4, y0 - grow + dy + 4, x1 + grow - 4, y1 + grow + dy - 2,
+                       self._r + grow, fill=_mix(card, _mix(c1, c2, 0.5), a * glow * 2),
+                       outline="")
+        k = (now - self._anim_t0) / 0.6
+        if 0 <= k <= 1:
+            for i in range(2):
+                kk = k - i * 0.25
+                if 0 <= kk <= 1:
+                    g = 3 + _px(12) * (1 - (1 - kk) ** 3)
+                    _rrect(self, x0 - g, y0 - g, x1 + g, y1 + g, self._r + g,
+                           fill="", outline=_mix(c1, card, kk), width=2)
+        _gradient_rrect(self, x0, y0, x1, y1, self._r, c1, c2)
+        self.create_line(x0 + self._r, y0 + 2, x1 - self._r, y0 + 2, fill=_mix(c1, "#ffffff", 0.35))
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        if sent:
+            f = self._f_sent
+            label = _elide(f, self._sent_label, int(x1 - x0) - _px(60))
+            tw = f.measure(label)
+            _draw_check(self, cx - tw / 2 - _px(12), cy, _px(14), self._fg, width=_px(3))
+            self.create_text(cx + _px(6), cy, text=label, fill=self._fg, font=f)
+        else:
+            self.create_text(cx, cy, text=self._text, fill=self._fg, font=self._f_label)
+
+
+class StationChip(tk.Canvas):
+    """A selectable station pill bound to a BooleanVar (one per online
+    station in "Send to"). Selected = gradient fill with a check; unselected
+    = soft outline with a green online dot."""
+
+    def __init__(self, parent, text: str, var: tk.BooleanVar, theme: dict) -> None:
+        self._f = tkfont.Font(root=parent, family=_ui_family(), size=11, weight="bold")
+        super().__init__(parent, width=self._f.measure(text) + _px(54), height=_px(34),
+                         highlightthickness=0, bd=0, bg=theme["card_bg"], cursor="hand2")
+        self.text, self.var, self.th, self._hover = text, var, theme, False
+        self._trace = var.trace_add("write", lambda *_: self._draw())
+        self.bind("<Button-1>", lambda _e: self.var.set(not self.var.get()))
+        self.bind("<Enter>", lambda _e: self._set_hover(True))
+        self.bind("<Leave>", lambda _e: self._set_hover(False))
+        self.bind("<Destroy>", self._on_destroy)
+        self._draw()
+
+    def _on_destroy(self, e: tk.Event) -> None:
+        if e.widget is self:
+            try:
+                self.var.trace_remove("write", self._trace)
+            except (tk.TclError, ValueError):
+                pass
+
+    def _set_hover(self, v: bool) -> None:
+        self._hover = v
+        self._draw()
+
+    def _draw(self) -> None:
+        try:
+            self.delete("all")
+            sel = bool(self.var.get())
+        except tk.TclError:
+            return
+        th = self.th
+        w, h = int(self["width"]), int(self["height"])
+        r = h / 2 - 2
+        if sel:
+            _gradient_rrect(self, 1, 2, w - 2, h - 3, r, th["accent"], th.get("accent2", th["accent"]))
+            fg = th["accent_text"]
+            _draw_check(self, _px(19), h / 2, _px(10), fg, width=2)
+        else:
+            _rrect(self, 1, 2, w - 2, h - 3, r, fill=th.get("chip_bg", th["input_bg"]),
+                   outline=th["accent"] if self._hover else th.get("card_border", "#e2e8f0"),
+                   width=1.2)
+            fg = th["text"]
+            d = _px(4)
+            self.create_oval(_px(19) - d, h / 2 - d, _px(19) + d, h / 2 + d, fill=th["status"],
+                             outline="")
+        self.create_text(_px(32), h / 2, text=self.text, anchor="w", fill=fg, font=self._f)
+
+
+class VolumeSlider(tk.Canvas):
+    """Alert-volume slider bound to an IntVar (0-100): gradient fill up to
+    the thumb, a round thumb, and the value as a percentage on the right."""
+
+    def __init__(self, parent, var: tk.IntVar, theme: dict, on_release=None) -> None:
+        super().__init__(parent, height=_px(30), width=_px(200), highlightthickness=0, bd=0,
+                         bg=theme["card_bg"], cursor="hand2")
+        self.var, self.th, self._on_release_cb = var, theme, on_release
+        self._f = tkfont.Font(root=parent, family=_ui_family(), size=10, weight="bold")
+        var.trace_add("write", lambda *_: self._draw())
+        self.bind("<Configure>", lambda _e: self._draw())
+        self.bind("<Button-1>", self._drag)
+        self.bind("<B1-Motion>", self._drag)
+        self.bind("<ButtonRelease-1>", lambda _e: self._on_release_cb and self._on_release_cb())
+
+    def set_theme(self, theme: dict) -> None:
+        self.th = theme
+        self.configure(bg=theme["card_bg"])
+        self._draw()
+
+    def _track(self) -> tuple[float, float]:
+        w = self.winfo_width() - self._f.measure("100%") - _px(12)
+        return _px(10), max(_px(30), w - _px(10))
+
+    def _drag(self, e: tk.Event) -> None:
+        x0, x1 = self._track()
+        self.var.set(int(max(0, min(100, round((e.x - x0) / max(1, x1 - x0) * 100)))))
+
+    def _draw(self) -> None:
+        try:
+            self.delete("all")
+            v = max(0, min(100, int(self.var.get())))
+        except (tk.TclError, ValueError):
+            return
+        if self.winfo_width() < 40:
+            return
+        th = self.th
+        x0, x1 = self._track()
+        y = self.winfo_height() / 2
+        xv = x0 + (x1 - x0) * v / 100
+        tr = _px(3)
+        _rrect(self, x0, y - tr, x1, y + tr, tr, fill=th["slider_track"], outline="")
+        if xv > x0 + 2:
+            _gradient_rrect(self, x0, y - tr, xv, y + tr, tr, th["accent"], th.get("accent2", th["accent"]))
+        kr = _px(9)
+        self.create_oval(xv - kr - 1, y - kr + 2, xv + kr + 1, y + kr + 3,
+                         fill=_mix(th["card_bg"], "#000000", 0.12), outline="")
+        self.create_oval(xv - kr, y - kr, xv + kr, y + kr, fill="#ffffff",
+                         outline=_mix(th["accent"], "#ffffff", 0.3), width=2)
+        self.create_text(self.winfo_width() - 2, y, text="%d%%" % v, anchor="e", fill=th["sub"],
+                         font=self._f)
+
+
+class IconButton(tk.Canvas):
+    """Small round "play" button (alert-sound preview). The triangle is a
+    polygon, not a glyph, so it looks identical on every platform."""
+
+    def __init__(self, parent, theme: dict, command=None) -> None:
+        s = _px(30)
+        super().__init__(parent, width=s, height=s, highlightthickness=0, bd=0,
+                         bg=theme["card_bg"], cursor="hand2")
+        self.th, self._command, self._hover = theme, command, False
+        self.bind("<Enter>", lambda _e: self._set_hover(True))
+        self.bind("<Leave>", lambda _e: self._set_hover(False))
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self._draw()
+
+    def set_theme(self, theme: dict) -> None:
+        self.th = theme
+        self.configure(bg=theme["card_bg"])
+        self._draw()
+
+    def _set_hover(self, v: bool) -> None:
+        self._hover = v
+        self._draw()
+
+    def _on_release(self, e: tk.Event) -> None:
+        if 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height() and self._command:
+            self._command()
+
+    def _draw(self) -> None:
+        self.delete("all")
+        th = self.th
+        s = int(self["width"])
+        if self._hover:
+            _gradient_rrect(self, 1, 1, s - 1, s - 1, s / 2 - 1, th["accent"], th.get("accent2", th["accent"]))
+            fg = th["accent_text"]
+        else:
+            self.create_oval(1, 1, s - 1, s - 1, fill=_mix(th["card_bg"], th["accent"], 0.12), outline="")
+            fg = th["accent"]
+        c, k = s / 2, s * 0.17
+        self.create_polygon(c - k * 0.8, c - k, c - k * 0.8, c + k, c + k * 1.1, c,
+                            fill=fg, outline=fg, joinstyle="round")
+
+
+class AppLogo(tk.Canvas):
+    """The app's speech-bubble + cross mark (Logo.svg) in the theme gradient."""
+
+    def __init__(self, parent, theme: dict, size: int = 40) -> None:
+        self._size = _px(size)
+        super().__init__(parent, width=self._size, height=self._size, highlightthickness=0, bd=0,
+                         bg=theme["bg"])
+        self.set_theme(theme)
+
+    def set_theme(self, theme: dict) -> None:
+        self.configure(bg=theme["bg"])
+        self.delete("all")
+        s = self._size / 100.0
+        a1, a2 = theme["accent"], theme.get("accent2", theme["accent"])
+        _gradient_rrect(self, 10 * s, 15 * s, 90 * s, 70 * s, 15 * s, a1, a2)
+        self.create_polygon(30 * s, 69 * s, 46 * s, 69 * s, 30 * s, 86 * s,
+                            fill=_mix(a1, a2, 0.25), outline="")
+        self.create_rectangle(45 * s, 30 * s, 55 * s, 55 * s, fill="#ffffff", outline="")
+        self.create_rectangle(37.5 * s, 37.5 * s, 62.5 * s, 47.5 * s, fill="#ffffff", outline="")
+
+
+class StatusPill(tk.Canvas):
+    """Header pill: "3 stations online" with a softly pulsing green dot, or
+    the LAN status ("Waiting for other workstations…") with a still amber /
+    gray dot. The pulse only runs while the window is visible, so a window
+    hidden to the tray costs nothing."""
+
+    def __init__(self, parent, theme: dict) -> None:
+        self._f = tkfont.Font(root=parent, family=_ui_family(), size=11, weight="bold")
+        super().__init__(parent, width=_px(120), height=_px(30), highlightthickness=0, bd=0,
+                         bg=theme["bg"])
+        self.th = theme
+        self._text = ""
+        self._state = "offline"
+        self._after_id: Optional[str] = None
+
+    def set_theme(self, theme: dict) -> None:
+        self.th = theme
+        self.configure(bg=theme["bg"])
+        self._draw()
+
+    def set_status(self, text: str, state: str) -> None:
+        if (text, state) == (self._text, self._state):
+            return
+        self._text, self._state = text, state
+        self.configure(width=self._f.measure(text) + _px(44))
+        self._draw()
+        if state == "online" and self._after_id is None:
+            self._pulse()
+
+    def _pulse(self) -> None:
+        self._after_id = None
+        if self._state != "online":
+            return
+        try:
+            visible = bool(self.winfo_viewable())
+        except tk.TclError:
+            return
+        if visible:
+            self._draw()
+        try:
+            self._after_id = self.after(50 if visible else 1000, self._pulse)
+        except tk.TclError:
+            pass
+
+    def _draw(self) -> None:
+        try:
+            self.delete("all")
+        except tk.TclError:
+            return
+        th = self.th
+        w, h = int(self["width"]), int(self["height"])
+        _rrect(self, 1, 1, w - 1, h - 1, h / 2 - 1, fill=th["card_bg"],
+               outline=th.get("card_border", "#e2e8f0"))
+        cx, cy = _px(20), h / 2
+        if self._state == "online":
+            dot = th["status"]
+            p = (time.monotonic() % 1.8) / 1.8
+            pr = _px(4) + _px(7) * p
+            self.create_oval(cx - pr, cy - pr, cx + pr, cy + pr,
+                             fill=_mix(dot, th["card_bg"], 0.55 + 0.45 * p), outline="")
+        elif self._state == "waiting":
+            dot = "#f59e0b"
+        else:
+            dot = "#9ca3af"
+        d = _px(4)
+        self.create_oval(cx - d, cy - d, cx + d, cy + d, fill=dot, outline="")
+        self.create_text(_px(32), cy, text=self._text, anchor="w", fill=th["text"], font=self._f)
 
 
 class RoundedButton(tk.Canvas):
@@ -1904,6 +2529,7 @@ class ChairsideReadyAlertApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         _init_ui_family(root)
+        _init_ui_scale(root)
         self.root.title(APP_TITLE)
         self.root.geometry("980x760")
         self.root.minsize(940, 700)
@@ -1963,15 +2589,6 @@ class ChairsideReadyAlertApp:
         self.root.report_callback_exception = self._report_tk_callback_exception
         self._diag_win: Optional[tk.Toplevel] = None
         self._diag_text: Optional[tk.Text] = None
-        # Ready Messages log layout state — see _refresh_log_tabstop and
-        # _refresh_separators. _max_body_width_px tracks the widest body
-        # currently displayed (in pixels) so the right tab stop can sit
-        # just past it; resets on midnight rollover. _separator_frames
-        # tracks the embedded tk.Frame widgets used as inter-line
-        # separators so they can be destroyed and rebuilt as the log
-        # mutates.
-        self._max_body_width_px: int = 0
-        self._separator_frames: list[tk.Frame] = []
         # T+25s post-start sentinel that surfaces a help dialog when no LAN
         # peers have appeared — typically because Windows Firewall has the
         # app's Private-profile rules disabled. See _check_lan_health.
@@ -2010,8 +2627,7 @@ class ChairsideReadyAlertApp:
         self._load_config_into_form()
         self._sync_autostart_state()
         # Restore today's Ready log (if any) and start the daily-rollover timer.
-        # Must run after _build_ui creates self.log and _load_config_into_form
-        # → _apply_theme has configured the recent1/recent2 tags.
+        # Must run after _build_ui creates self.log.
         self._load_ready_log()
         self.root.after(60_000, self._check_log_rollover)
         # Delay tray startup on macOS until event loop/UI is settled; early startup can be flaky.
@@ -4033,17 +4649,38 @@ class ChairsideReadyAlertApp:
         s.configure("TFrame",         background=bg)
         s.configure("Card.TFrame",    background=card)
         s.configure("TLabel",         background=bg,   foreground=text_c, font=_ttk_font(10))
-        s.configure("Card.TLabel",    background=card, foreground=text_c, font=_ttk_font(10))
+        s.configure("Card.TLabel",    background=card, foreground=sub_c, font=_ttk_font(10))
         s.configure("Title.TLabel",   background=bg,   foreground=title_c, font=_ttk_font(13, "bold"))
-        s.configure("CardTitle.TLabel", background=card, foreground=text_c, font=_ttk_font(10, "bold"))
+        # Section headings: small caps-style uppercase labels in the muted color.
+        s.configure("CardTitle.TLabel", background=card, foreground=sub_c, font=_ttk_font(9, "bold"))
         s.configure("Subtitle.TLabel",  background=bg,  foreground=sub_c, font=_ttk_font(10))
         s.configure("TCheckbutton",   background=card, foreground=text_c)
         s.map("TCheckbutton",         background=[("active", card)])
         s.configure("TScale",         background=card, troughcolor=slider)
-        s.configure("TCombobox",      fieldbackground=input_bg, foreground=text_c, background=card)
+        s.configure("TCombobox",      fieldbackground=input_bg, foreground=text_c, background=card,
+                    arrowcolor=sub_c, bordercolor=theme["input_border"],
+                    lightcolor=input_bg, darkcolor=input_bg)
         s.map("TCombobox",
               fieldbackground=[("readonly", input_bg), ("disabled", input_bg)],
-              foreground=[("readonly", text_c)])
+              foreground=[("readonly", text_c)],
+              # No blue "selected text" band on a focused readonly combobox.
+              selectbackground=[("readonly", input_bg)],
+              selectforeground=[("readonly", text_c)])
+        # Dropdown lists: colors for popdowns created from now on, plus any
+        # already created (Tk builds each popdown lazily on first open).
+        for opt, val in (("background", input_bg), ("foreground", text_c),
+                         ("selectBackground", accent), ("selectForeground", atext)):
+            self.root.option_add(f"*TCombobox*Listbox.{opt}", val)
+        for combo in (getattr(self, "label_combo", None), getattr(self, "sound_combo", None)):
+            if combo is None:
+                continue
+            try:
+                pd = combo.tk.call("ttk::combobox::PopdownWindow", combo)
+                combo.tk.call(f"{pd}.f.l", "configure", "-background", input_bg,
+                              "-foreground", text_c, "-selectbackground", accent,
+                              "-selectforeground", atext)
+            except tk.TclError:
+                pass
         s.configure("TEntry",         fieldbackground=input_bg, foreground=text_c)
         s.configure("Primary.TButton",  background=accent, foreground=atext)
         s.map("Primary.TButton",        background=[("active", accent), ("pressed", accent)])
@@ -4052,94 +4689,22 @@ class ChairsideReadyAlertApp:
         s.configure("Preview.TButton",  background=accent, foreground=atext)
         s.map("Preview.TButton",        background=[("active", accent)])
 
-        if hasattr(self, "_log_panel"):
-            # border=None -- the outer card border already encloses
-            # this panel (see RoundedLogPanel init in _build_ui).
-            self._log_panel.update_theme(
-                theme["log_bg"], theme["log_text"], None, theme["card_bg"]
-            )
-        # Configure the two emphasis tiers for incoming Ready messages.
-        # 'recent1'       = newest incoming Ready (15pt bold, theme's darkest color).
-        # 'recent2'       = second-most-recent (10pt bold -- same size as
-        #                   plain/older lines but bolder, plus the theme's
-        #                   dark accent color).
-        # 'recent1_flash' = a transient background-highlight tag layered on top of
-        #                   recent1. Its background color animates from theme
-        #                   'highlight' down to 'log_bg' over ~600ms whenever a
-        #                   new Ready arrives. Tk text-tag attributes merge, so
-        #                   recent1's font/foreground stick while the flash bg
-        #                   smoothly fades out.
-        # Since 1.0.61 all three font tags apply ONLY to the "Sender: Ready"
-        # body of the line, not the "  [hh:mm AP]" timestamp suffix. The
-        # timestamp keeps the log's default 10pt across every tier so the
-        # time column lines up consistently regardless of which line is
-        # most-recent. See _append_incoming_ready_log for the body-range
-        # computation.
-        #
-        # Since 1.0.62 every inserted line ALSO carries one of three row
-        # tags — row_recent1, row_recent2, or row_plain — applied to the
-        # WHOLE line. The row tag's spacing1 / spacing3 pads smaller-font
-        # lines vertically up to the height of the largest tier so the gap
-        # between any two adjacent lines feels identical to the eye
-        # regardless of which tier they belong to. row_recent1 itself adds
-        # zero padding because it already IS the tallest tier. Padding is
-        # computed from each font's `linespace` metric at theme-apply time
-        # so the values remain correct on systems that substitute a fallback
-        # font with a different metric.
-        # Re-configured on every theme change. Bumping the animation sequence
-        # aborts any in-flight flash that captured the old colors.
+        dark = _is_dark(bg)
         if hasattr(self, "log"):
-            emph_dark = theme.get("emph_dark", title_c)
-            log_bg = theme["log_bg"]
-            self.log.tag_configure(
-                "recent1",
-                font=_ttk_font(15, "bold"),
-                foreground=emph_dark,
-            )
-            self.log.tag_configure(
-                "recent2",
-                font=_ttk_font(10, "bold"),
-                foreground=emph_dark,
-            )
-            # Reset the flash background to the log's normal background. Any
-            # in-flight animation will see the seq bump and abandon its frames.
-            self.log.tag_configure("recent1_flash", background=log_bg)
-            self._recent1_anim_seq = getattr(self, "_recent1_anim_seq", 0) + 1
-
-            # ---- row_* tags: equalize per-line height across font tiers ----
+            self.log.set_theme(theme)
+        for w in getattr(self, "_themed_widgets", ()):
             try:
-                f_r1 = tkfont.Font(root=self.root, font=_ttk_font(15, "bold"))
-                f_r2 = tkfont.Font(root=self.root, font=_ttk_font(10, "bold"))
-                f_pl = tkfont.Font(root=self.root, font=_ui_font(10))
-                ls_target = f_r1.metrics("linespace")
-                pad_r2 = max(0, ls_target - f_r2.metrics("linespace"))
-                pad_pl = max(0, ls_target - f_pl.metrics("linespace"))
-            except Exception:
-                # If tkfont measurement fails, fall back to zero padding;
-                # visual reverts to the 1.0.61 look (line heights vary by
-                # font size) but nothing crashes — Ready messages still
-                # render and emphasize correctly.
-                pad_r2 = 0
-                pad_pl = 0
-            # Split each pad value half above the line, half below, so each
-            # line stays vertically centered inside its allotted height
-            # instead of leaning toward a top or bottom edge. Odd remainders
-            # go on spacing3 (below).
-            r2_top, r2_bot = pad_r2 // 2, pad_r2 - pad_r2 // 2
-            pl_top, pl_bot = pad_pl // 2, pad_pl - pad_pl // 2
-            self.log.tag_configure("row_recent1", spacing1=0, spacing3=0)
-            self.log.tag_configure("row_recent2", spacing1=r2_top, spacing3=r2_bot)
-            self.log.tag_configure("row_plain",   spacing1=pl_top, spacing3=pl_bot)
-            # Lower the row tags below recent1/recent2 so on a line that
-            # carries both a row tag and a font tag, the font option comes
-            # from recent1/recent2 (higher priority) while the spacing
-            # options come from the row tag (the only tag setting them —
-            # Tk falls through unset options to lower-priority tags).
-            try:
-                self.log.tag_lower("row_recent1", "recent1")
-                self.log.tag_lower("row_recent2", "recent1")
-                self.log.tag_lower("row_plain", "recent1")
+                w.set_theme(theme)
             except tk.TclError:
+                pass
+        if hasattr(self, "_header_title"):
+            self._header_title.configure(bg=bg, fg=title_c)
+            self._header_sub.configure(bg=bg, fg=sub_c)
+        if _ready_animations is not None:
+            # Stick figure + effects follow the theme (light ink on Midnight).
+            try:
+                _ready_animations.set_palette(theme["ink"], accent, card, dark)
+            except Exception:
                 pass
         if hasattr(self, "status_label"):
             self.status_label.configure(fg=theme["status"], bg=card, font=_ui_font(9, "bold"))
@@ -4157,12 +4722,11 @@ class ChairsideReadyAlertApp:
             except Exception:
                 pass
         for c in self._cards:
-            c.update_colors(card, bg, cborder)
+            # Cards are borderless with a soft shadow; dark themes add a
+            # faint outline since a shadow barely shows on a dark page.
+            c.update_colors(card, bg, cborder if dark else None)
         for btn in self._buttons:
             btn.update_colors(accent, atext, card)
-        # The Ready button is in self._buttons so the loop above just repainted
-        # it accent-colored. If it should be disabled (no station picked yet),
-        # repaint it muted again now.
         if hasattr(self, "_ready_btn_widget"):
             self._set_ready_button_enabled(getattr(self, "_ready_button_enabled", True))
         # Update sound_row and targets_frame direct-color tk frames
@@ -4192,31 +4756,48 @@ class ChairsideReadyAlertApp:
         main.pack(fill="both", expand=True)
 
         header = tk.Frame(main, bg=abg)
-        header.pack(fill="x", pady=(0, 12))
-        ttk.Label(header, text="Chairside Ready Alert", style="Title.TLabel").pack(anchor="w")
+        header.pack(fill="x", pady=(0, 6))
+        # Header: logo, app name + "This station: ...", and a live status
+        # pill ("3 stations online" / "Waiting for other workstations…").
+        self._themed_widgets: list = []
+        logo = AppLogo(header, t, size=38)
+        logo.pack(side="left")
+        self._themed_widgets.append(logo)
+        title_box = tk.Frame(header, bg=abg)
+        title_box.pack(side="left", padx=(10, 0))
+        self._header_title = tk.Label(title_box, text=APP_TITLE, bg=abg, fg=t["title"],
+                                      font=_ui_font(16, "bold"))
+        self._header_title.pack(anchor="w")
+        self._header_sub = tk.Label(title_box, text="", bg=abg, fg=t["sub"], font=_ui_font(10))
+        self._header_sub.pack(anchor="w")
+        self._status_pill = StatusPill(header, t)
+        self._status_pill.pack(side="right")
+        self._themed_widgets.append(self._status_pill)
+        self.label_var.trace_add("write", lambda *_: self._refresh_header_station())
+        self._refresh_header_station()
 
         # Top row: Station Setup | Ready Messages.
         # Expands vertically so the Ready Messages log absorbs any extra
-        # window height that isn't claimed by the Send Message card below.
-        # The Send Message card sizes to its content (see below), so when
+        # window height that isn't claimed by the Send to card below.
+        # The Send to card sizes to its content (see below), so when
         # there are few peers detected the log grows taller; when there are
-        # many peers the Send Message card grows and the log shrinks.
+        # many peers the Send to card grows and the log shrinks.
         top_row = tk.Frame(main, bg=abg)
         # Build (but do not yet show) the trial banner so it is positioned
         # immediately above top_row when _apply_trial_state_to_ui packs it.
         self._build_trial_banner(main, bg_color=abg)
-        top_row.pack(fill="both", expand=True, pady=(0, 10))
+        top_row.pack(fill="both", expand=True, pady=(0, 2))
         self._top_row_frame = top_row
-        self._main_shell_frames = (main, header, top_row)
+        self._main_shell_frames = (main, header, top_row, title_box)
 
         # Station Setup — compact left card
-        _lc = RoundedCard(top_row, bg=cbg, outer_bg=abg, radius=12, padding=14, border=cborder)
-        _lc.pack(side="left", fill="y", padx=(0, 8))
+        _lc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
+        _lc.pack(side="left", fill="y", padx=(0, 4))
         self._cards.append(_lc)
         left = _lc.inner_frame
 
-        ttk.Label(left, text="Station Setup", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
-        ttk.Label(left, text="Station name:", style="Card.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Label(left, text="STATION SETUP", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(left, text="Station name", style="Card.TLabel").pack(anchor="w", pady=(0, 3))
         # Readonly: free-text typing was redundant with the new "Add or Remove
         # Computers..." dialog and led to drift between local typed names and the
         # network-shared list. Users now pick from the dropdown only.
@@ -4241,161 +4822,126 @@ class ChairsideReadyAlertApp:
         )
         self.duplicate_name_label.pack(anchor="w", pady=(4, 0))
 
-        ttk.Label(left, text="Alert Sound:", style="Card.TLabel").pack(anchor="w", pady=(12, 2))
+        ttk.Label(left, text="Alert sound", style="Card.TLabel").pack(anchor="w", pady=(10, 3))
         sound_row = tk.Frame(left, bg=cbg)
         sound_row.pack(fill="x")
         self.sound_combo = ttk.Combobox(
             sound_row, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=18
         )
         self.sound_combo.pack(side="left", fill="x", expand=True)
-        prev_btn = RoundedButton(
-            sound_row, text="▶", bg=t["accent"], fg=t["accent_text"],
-            radius=6, padx=9, pady=3, font=_ui_font(10),
+        prev_btn = IconButton(
+            sound_row, t,
             command=lambda: self._play_alert_sound(
                 self.alert_sound_var.get(), int(self.alert_volume_var.get())
-            )
+            ),
         )
-        prev_btn.pack(side="left", padx=(4, 0))
-        self._buttons.append(prev_btn)
+        prev_btn.pack(side="left", padx=(8, 0))
+        self._themed_widgets.append(prev_btn)
 
-        ttk.Label(left, text="Alert Volume:", style="Card.TLabel").pack(anchor="w", pady=(10, 2))
-        self._volume_scale = ttk.Scale(left, from_=0, to=100, variable=self.alert_volume_var, orient="horizontal")
+        ttk.Label(left, text="Alert volume", style="Card.TLabel").pack(anchor="w", pady=(12, 3))
+        self._volume_scale = VolumeSlider(left, self.alert_volume_var, t,
+                                          on_release=self._persist_form)
         self._volume_scale.pack(fill="x")
-        self._volume_scale.bind("<ButtonRelease-1>", lambda _e: self._persist_form())
+        self._themed_widgets.append(self._volume_scale)
 
         # Ready Messages — expanding right card
-        _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, radius=12, padding=14, border=cborder)
-        _rc.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
+        _rc.pack(side="left", fill="both", expand=True, padx=(4, 0))
         self._cards.append(_rc)
         right = _rc.inner_frame
 
+        # LAN status text. Shown in the header pill (see
+        # _refresh_status_pill); this label is kept as the status source but
+        # never packed.
         self.status_var = tk.StringVar(value="Starting…")
         self.status_label = tk.Label(right, textvariable=self.status_var,
                                       fg=t["status"], bg=cbg,
                                       font=_ui_font(9, "bold"))
-        self.status_label.pack(anchor="w", pady=(0, 6))
 
-        # Stored so _set_status_banner_visible can re-pack the (hidden when
-        # peers are online) status banner with `before=` pointing at this
-        # header, keeping the original vertical order on the way back.
-        self._ready_messages_header = ttk.Label(right, text="Ready Messages",
+        self._ready_messages_header = ttk.Label(right, text="READY MESSAGES",
                                                 style="CardTitle.TLabel")
         self._ready_messages_header.pack(anchor="w")
 
-        self._log_panel = RoundedLogPanel(
-            right,
-            log_bg=t["log_bg"],
-            log_fg=t["log_text"],
-            # No own border -- the outer RoundedCard's border already
-            # encloses this panel, and drawing a second nested border
-            # was visual noise rather than separation.
-            border="",
-            card_bg=cbg,
-            font=_ui_font(10),
-        )
-        self._log_panel.pack(fill="both", expand=True, pady=(8, 0))
-        self.log = self._log_panel.log
-        self.log.configure(state="disabled")
-        # Each log line uses two tab stops: tab 1 (center) centers the
-        # "Sender: Ready" body on the widget's vertical midline so smaller-
-        # font tiers sit centered under the larger ones; tab 2 (right)
-        # right-aligns "[hh:mm AP]" just past the widest body's right edge.
-        # Both stops are recomputed in _refresh_log_tabstop and tracked on
-        # window resize. _refresh_separator_widths keeps the embedded
-        # separator frames matching the current widget width.
-        def _on_log_configure(event):
-            self._refresh_log_tabstop(event)
-            self._refresh_separator_widths(event)
-        self.log.bind("<Configure>", _on_log_configure)
-        self.root.after_idle(self._refresh_log_tabstop)
+        # The inner frame has a natural height only, so the log gets its
+        # height from the card: fill the card canvas vertically.
+        self.log = ReadyLog(right, t)
+        self.log.pack(fill="both", expand=True, pady=(6, 0))
+        _rc.fill_height = True
 
-        # Ready button card (layout_preview: .ready-wrap centered, .ready-b ~80% width)
-        _rbc = RoundedCard(main, bg=cbg, outer_bg=abg, radius=12, padding=20, border=cborder)
-        _rbc.pack(fill="x", pady=(0, 10))
+        # Ready button card (.ready-wrap centered, button ~80% width)
+        _rbc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=12)
+        _rbc.pack(fill="x", pady=(0, 2))
         self._cards.append(_rbc)
         # Full-width row; inner frame pack(anchor="center") centers the button in the window.
         self._ready_wrap = tk.Frame(_rbc.inner_frame, bg=cbg)
         self._ready_wrap.pack(fill="x")
         self._ready_center = tk.Frame(self._ready_wrap, bg=cbg)
         self._ready_center.pack(anchor="center")
-        ready_btn = RoundedButton(
-            self._ready_center, text="Ready",
-            bg=t["accent"], fg=t["accent_text"],
-            radius=10, padx=20, pady=12,
-            font=_ui_font(15, "bold"),
-            command=self.send_ready_selected,
-        )
+        ready_btn = ReadyButton(self._ready_center, t, text="Ready",
+                                command=self.send_ready_selected)
         ready_btn.pack()
         # Stash the Ready button reference so the whimsy animations can
         # anchor "emerge from behind this widget" positioning to it.
         self._ready_btn_widget = ready_btn
-        # Taller hit-area: 125% of natural (font + padding) height; width still from row (80% rule).
-        _ready_natural_h = int(ready_btn["height"])
-        ready_btn_height = max(1, int(round(_ready_natural_h * 1.25)))
 
         def _size_ready_btn(e: tk.Event) -> None:
             if e.widget != self._ready_wrap:
                 return
             rw = int(e.width)
             if rw > 40:
-                ready_btn.set_canvas_size(max(160, int(rw * 0.80)), ready_btn_height)
+                ready_btn.set_canvas_size(max(160, int(rw * 0.80)))
 
         self._ready_wrap.bind("<Configure>", _size_ready_btn)
-        self._buttons.append(ready_btn)
 
-        # Send Message card.
+        # Send to card.
         # fill="x" without expand=True so the card sizes to its content (the
-        # checkbox grid). RoundedCard's _on_inner_resize already makes the
+        # station chips). RoundedCard's _on_inner_resize already makes the
         # canvas track the inner frame's height, so the card grows and shrinks
-        # automatically as peers come and go on the LAN. The visible padding
-        # inside the card stays consistent (the card's padding=14 plus the
-        # small targets_frame bottom pad below) regardless of peer count.
-        _mc = RoundedCard(main, bg=cbg, outer_bg=abg, radius=12, padding=14, border=cborder)
+        # automatically as peers come and go on the LAN.
+        _mc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=14)
         _mc.pack(fill="x")
         self._cards.append(_mc)
         msg = _mc.inner_frame
 
-        ttk.Label(msg, text="Send Message", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(msg, text="SEND TO", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 6))
         self.targets_frame = tk.Frame(msg, bg=cbg)
-        # pady=(0, 6) below the targets grid keeps the visible space under the
-        # last checkbox row roughly matching the space above the header.
-        self.targets_frame.pack(fill="x", pady=(0, 6))
+        self.targets_frame.pack(fill="x", pady=(0, 2))
         self._refresh_target_checkboxes([])
+        self._refresh_lan_status_banner()
+
+    def _refresh_header_station(self) -> None:
+        if not hasattr(self, "_header_sub"):
+            return
+        name = self.label_var.get().strip()
+        if not name or name == STATION_NAME_PROMPT:
+            text = "Choose this station's name under Station Setup"
+        else:
+            text = f"This station: {name}"
+        self._header_sub.configure(text=text)
+
+    def _refresh_status_pill(self) -> None:
+        pill = getattr(self, "_status_pill", None)
+        if pill is None:
+            return
+        if self._network_running and self.online_labels:
+            me = self.label_var.get().strip()
+            n = len([lbl for lbl in self.online_labels if lbl != me]) or len(self.online_labels)
+            pill.set_status(f"{n} station{'s' if n != 1 else ''} online", "online")
+        elif self._network_running:
+            pill.set_status(self.status_var.get(), "waiting")
+        else:
+            pill.set_status(self.status_var.get(), "offline")
 
     def _refresh_lan_status_banner(self) -> None:
-        """Main status line: LAN summary only (not per-socket connect/disconnect noise).
-
-        When peers ARE online the banner is hidden entirely -- the checkbox
-        grid below already lists every online station, so duplicating it
-        here in green text was pure redundancy. The banner remains visible
-        for the not-yet-online states ('Not connected', 'Waiting for other
-        workstations...') because an empty checkbox grid is ambiguous on
-        its own (could mean "no peers yet" OR "network broken")."""
+        """LAN summary for the header status pill: "N stations online" when
+        peers are up, otherwise "Not connected" / "Waiting for other
+        workstations…" (an empty Send to card alone is ambiguous -- no peers
+        yet, or a broken network)."""
         if not self._network_running:
             self.status_var.set("Not connected")
-            self._set_status_banner_visible(True)
-            return
-        if self.online_labels:
-            self._set_status_banner_visible(False)
-        else:
+        elif not self.online_labels:
             self.status_var.set("Waiting for other workstations…")
-            self._set_status_banner_visible(True)
-
-    def _set_status_banner_visible(self, visible: bool) -> None:
-        if not hasattr(self, "status_label"):
-            return
-        try:
-            is_mapped = bool(self.status_label.winfo_ismapped())
-        except tk.TclError:
-            return
-        if visible and not is_mapped:
-            if hasattr(self, "_ready_messages_header"):
-                self.status_label.pack(anchor="w", pady=(0, 6),
-                                       before=self._ready_messages_header)
-            else:
-                self.status_label.pack(anchor="w", pady=(0, 6))
-        elif not visible and is_mapped:
-            self.status_label.pack_forget()
+        self._refresh_status_pill()
 
     def _manual_peer_ip_list(self) -> list[str]:
         raw = self.config_store.data.get("manual_peer_ips", "")
@@ -4771,11 +5317,8 @@ class ChairsideReadyAlertApp:
         btn = getattr(self, "_ready_btn_widget", None)
         if btn is None:
             return
-        t = self._current_theme
-        if enabled:
-            btn.update_colors(t["accent"], t["accent_text"], t["card_bg"])
-        else:
-            btn.update_colors("#9ca3af", "#ffffff", t["card_bg"])
+        btn.set_theme(self._current_theme)
+        btn.set_enabled(enabled)
 
     def _set_duplicate_name_warning(self, is_duplicate: bool) -> None:
         self._duplicate_name_detected = bool(is_duplicate)
@@ -4813,6 +5356,9 @@ class ChairsideReadyAlertApp:
             var.set(target_label in defaults)
 
     def _refresh_target_checkboxes(self, labels) -> None:
+        """Rebuild the Send to station chips (one StationChip per online
+        station other than this one, each bound to a BooleanVar in
+        self.target_vars). Selection survives rebuilds."""
         labels = sorted({str(x).strip() for x in labels if str(x).strip()})
         old_states = {label: var.get() for label, var in self.target_vars.items()}
         me = self.label_var.get().strip()
@@ -4825,306 +5371,33 @@ class ChairsideReadyAlertApp:
         self.target_vars.clear()
         filtered = [label for label in labels if label != me]
         default_targets = set(self.config_store.data.get("default_targets", []))
-        cbg = self._current_theme["card_bg"]
-        ctxt = self._current_theme["text"]
-        csub = self._current_theme["sub"]
+        theme = self._current_theme
+        self._refresh_status_pill()
         if not filtered:
             tk.Label(
                 self.targets_frame,
                 text="No other stations online yet. Names appear here after this computer sees them on the LAN.",
-                wraplength=520, bg=cbg, fg=csub, font=_ui_font(10),
+                wraplength=_px(520), bg=theme["card_bg"], fg=theme["sub"], font=_ui_font(10),
+                justify="left",
             ).pack(anchor="w")
-            for column in range(3):
-                self.targets_frame.grid_columnconfigure(column, weight=1)
             self._rebuild_default_menu()
             return
-        column_count = 3
+        column_count = 4
         for i, label in enumerate(filtered):
             checked = (label in default_targets) or old_states.get(label, False)
             var = tk.BooleanVar(value=checked)
             self.target_vars[label] = var
-            row = i // column_count
-            column = i % column_count
-            tk.Checkbutton(
-                self.targets_frame, text=label, variable=var,
-                bg=cbg, fg=ctxt, activebackground=cbg, activeforeground=ctxt,
-                selectcolor=cbg, relief="flat", font=_ui_font(10),
-            ).grid(row=row, column=column, sticky="w", padx=8, pady=3)
-        for column in range(column_count):
-            self.targets_frame.grid_columnconfigure(column, weight=1)
+            StationChip(self.targets_frame, label, var, theme).grid(
+                row=i // column_count, column=i % column_count,
+                sticky="w", padx=(0, _px(8)), pady=_px(3),
+            )
         self._rebuild_default_menu()
 
-    def _note_body_width(self, body_text: str, font_spec) -> None:
-        """Update the running maximum body pixel width used by the right tab
-        stop, taking the measurement in the font this body actually renders
-        in (15pt bold for recent1, 10pt bold for recent2, 10pt plain
-        for older/outgoing). The tab stop is then re-aligned via
-        _refresh_log_tabstop so the timestamp column sits just past the
-        widest body's right edge regardless of which tier it came from.
-
-        Monotonic-grow on purpose: shrinking the column when a long body
-        scrolls off would look jittery. The max is reset only on midnight
-        rollover (see _check_log_rollover)."""
-        if not body_text:
-            return
-        try:
-            f = tkfont.Font(root=self.root, font=font_spec)
-            w = f.measure(body_text)
-        except Exception:
-            return
-        if w > getattr(self, "_max_body_width_px", 0):
-            self._max_body_width_px = w
-            self._refresh_log_tabstop()
-
-    def _refresh_log_tabstop(self, _event: object = None) -> None:
-        """Configure the log widget's two tab stops:
-
-          tab 1 (left):   left-aligns every body at a small fixed indent
-                          so the body column has a uniform left edge
-                          regardless of which font tier the line uses
-                          (15pt bold recent1, 10pt bold recent2, 10pt
-                          plain older/outgoing).
-
-          tab 2 (right):  right-aligns "[hh:mm AP]" just past the widest
-                          body's right edge plus a small gap, so the
-                          timestamp column sits close to the bodies rather
-                          than way out at the widget edge. Position is
-                          (left_x + max_body_width + ts_width + gap),
-                          measured by _note_body_width on every insertion.
-
-        Bound to the log's <Configure> so window resizes keep both tab
-        stops tracking the current widget width. Falls back silently on
-        TclError (widget destroyed mid-resize)."""
-        try:
-            width = self.log.winfo_width()
-        except tk.TclError:
-            return
-        if width <= 1:
-            return  # widget not realized yet
-        # Body text starts at x=0 (no leading tab in log lines since 1.0.73).
-        # One tab stop: the right-aligned timestamp column, positioned just
-        # past the widest body text seen so far + timestamp width + gap.
-        max_body = float(getattr(self, "_max_body_width_px", 0))
-        # Estimate timestamp text width once per call (cheap; the string is
-        # short). Use a representative "[12:34 AM]" so the measure is the
-        # widest plausible value across the day.
-        try:
-            ts_font = tkfont.Font(root=self.root, font=_ui_font(10))
-            ts_w = ts_font.measure("[12:34 AM]")
-        except Exception:
-            ts_w = 80
-        gap = 20
-        # Position the right tab past where the widest body's right edge
-        # would land when left-aligned. Clamp to widget width so the tab
-        # stop never falls off-screen on a narrow window.
-        tab2_x = max_body + ts_w + gap
-        tab2_x = min(tab2_x, max(80, width - 8))
-        # Cache for _current_separator_width so the gray separator's right
-        # edge tracks the timestamp's right edge (which is where the
-        # right-aligned tab stop lands).
-        self._right_tab_x = float(tab2_x)
-        try:
-            self.log.configure(tabs=(int(tab2_x), "right"))
-        except tk.TclError:
-            pass
-        # Tab stop changed → separator widths may need refreshing too.
-        self._refresh_separator_widths()
-
-    def _refresh_separators(self) -> None:
-        """Rebuild the thin gray separator lines between adjacent log
-        entries. Called after every mutation that adds or removes a Ready-
-        log entry (incoming, outgoing, replay). Idempotent.
-
-        Each separator is a tk.Frame embedded via text.window_create on
-        its own display line; the line is also tagged "_separator_row"
-        so we can find and delete the whole line on the next rebuild
-        (which auto-destroys the embedded frame).
-
-        Entry lines are identified by carrying one of the row_* tags
-        (row_recent1, row_recent2, row_plain). Walking the lines is cheap
-        at the sizes this log ever reaches before the daily rollover."""
-        self.log.configure(state="normal")
-        try:
-            # 1. Delete every existing separator row. Deleting the text
-            #    range that holds the window-char auto-destroys the
-            #    embedded tk.Frame (per Tk text widget semantics); just
-            #    calling sep.destroy() would leave the window-char's
-            #    position in the text as an empty blank line.
-            ranges = self.log.tag_ranges("_separator_row")
-            pairs = [(str(ranges[i]), str(ranges[i + 1]))
-                     for i in range(0, len(ranges), 2)]
-            for start, end in reversed(pairs):
-                try:
-                    self.log.delete(start, end)
-                except tk.TclError:
-                    pass
-            self._separator_frames.clear()
-
-            # 2. Collect entry line indices by walking top-to-bottom.
-            try:
-                end_index = self.log.index("end - 1c")
-                last_line = int(end_index.split(".")[0])
-            except (tk.TclError, ValueError, AttributeError):
-                return
-            entry_lines: list[int] = []
-            for line_num in range(1, last_line + 1):
-                line_start = f"{line_num}.0"
-                try:
-                    names = self.log.tag_names(line_start)
-                except tk.TclError:
-                    continue
-                if any(t in names for t in ("row_recent1", "row_recent2", "row_plain")):
-                    entry_lines.append(line_num)
-            if len(entry_lines) <= 1:
-                return  # zero or one entries — nothing to separate
-
-            # 3. Insert a separator between each adjacent pair of entries,
-            #    walking right-to-left so insertions don't shift the line
-            #    indices we still need. Each separator is a one-line row
-            #    with a window-character + trailing newline; both chars
-            #    carry the "_separator_row" tag for later cleanup.
-            sep_width = self._current_separator_width()
-            sep_color = self._current_separator_color()
-            for i in range(len(entry_lines) - 1, 0, -1):
-                upper_line = entry_lines[i - 1]
-                lower_line = entry_lines[i]
-                # After the cleanup step above, entries should be on
-                # consecutive lines; guard anyway in case a stray non-
-                # entry line snuck in.
-                if lower_line - upper_line != 1:
-                    continue
-                insert_at = f"{lower_line}.0"
-                try:
-                    sep = tk.Frame(self.log, bg=sep_color, height=1, width=sep_width)
-                    # Insert newline first to grow the widget by one line,
-                    # then drop the window-char at the start of that new
-                    # line. After both inserts: line `lower_line` =
-                    # [window_char][newline], and the original lower line
-                    # content has shifted down to lower_line + 1.
-                    self.log.insert(insert_at, "\n")
-                    # padx=8 (previously 12) so the separator's left edge
-                    # sits 8px to the right of the body's left edge --
-                    # mirroring the 8px gap on the right side (separator
-                    # ends 8px left of the timestamp's right edge). With
-                    # the body now at content_x=0 (vs the old 4),
-                    # window_create padx=8 yields sep at content_x=8.
-                    self.log.window_create(insert_at, window=sep, padx=8, pady=3)
-                    # Tag both the window-char and the newline so the
-                    # whole row deletes cleanly on the next rebuild.
-                    self.log.tag_add(
-                        "_separator_row",
-                        insert_at,
-                        f"{insert_at} + 2c",
-                    )
-                    self._separator_frames.append(sep)
-                except tk.TclError:
-                    try:
-                        sep.destroy()  # type: ignore[unbound-local-variable]
-                    except Exception:
-                        pass
-        finally:
-            self.log.configure(state="disabled")
-
-    def _current_separator_width(self) -> int:
-        # Track the timestamp column's right edge instead of the widget's
-        # right edge, so the separator ends "just inside the right end of
-        # the timestamp" -- mirroring the left side where it ends "just
-        # inside the leftmost body character."
-        #
-        # Geometry in content coordinates (as of 1.0.72):
-        #   body left edge   = left_x (0) -- set in _refresh_log_tabstop
-        #   sep  left edge   = 8         -- window_create padx=8 in
-        #                                   _refresh_separators
-        #   ts   right edge  = tab2_x    -- right tab stop, cached as
-        #                                   self._right_tab_x
-        #
-        # The left side sits 8px to the right of the body's first
-        # character (sep at 8, body at 0). To mirror that on the right
-        # side, the separator's right edge should sit 8px to the left
-        # of the timestamp's right edge -- i.e. at tab2_x - 8. With the
-        # separator's own left edge at content_x = 8, the width is
-        # (tab2_x - 8) - 8 = tab2_x - 16.
-        tab2_x = getattr(self, "_right_tab_x", 0.0)
-        if tab2_x > 60:
-            return max(40, int(tab2_x) - 16)
-        # Fallback for very-early init before _refresh_log_tabstop has
-        # run -- keep close to the old behavior so the first paint is
-        # not jarringly different.
-        try:
-            return max(40, self.log.winfo_width() - 36)
-        except tk.TclError:
-            return 400
-
-    def _current_separator_color(self) -> str:
-        # Mid-gray separator readable on every theme's log background.
-        # Hardcoded rather than theme-derived: the per-theme card_border
-        # values are pastel and too faint to serve as a clear row divider
-        # against the light log background, and a neutral gray doesn't
-        # compete with the theme's accent colors anyway.
-        return "#9a9a9a"
-
-    def _refresh_separator_widths(self, _event: object = None) -> None:
-        """Update widths of existing separator widgets to match the current
-        log widget width. Called on Configure events; cheap (no widget
-        creation/destruction)."""
-        w = self._current_separator_width()
-        for f in self._separator_frames:
-            try:
-                f.configure(width=w)
-            except Exception:
-                pass
-
     def _trim_log_to_max_entries(self) -> None:
-        """Drop the oldest log entries from the WIDGET so at most
-        MAX_VISIBLE_LOG_ENTRIES remain. Idempotent.
-
-        Called after every insert (incoming, outgoing) and once after the
-        replay-on-launch loop finishes. Persistence (ready_log.txt) is NOT
-        trimmed -- the on-disk record stays complete for the day; only
-        the visible widget is capped to avoid a scroll-queue UX where
-        older entries pile up off-screen.
-
-        Identifies entries by their row_* tags (row_recent1 / row_recent2
-        / row_plain). Walks lines top-to-bottom; if entry count exceeds
-        the cap, deletes the entire buffer range from line 1 up to the
-        start of the (count - cap + 1)th entry. That single deletion
-        removes the excess oldest entries plus any separator lines
-        sandwiched between them. _refresh_separators is then called to
-        rebuild dividers between whatever survived."""
-        self.log.configure(state="normal")
-        deleted = False
-        try:
-            try:
-                end_index = self.log.index("end - 1c")
-                last_line = int(end_index.split(".")[0])
-            except (tk.TclError, ValueError, AttributeError):
-                return
-            entry_lines: list[int] = []
-            for line_num in range(1, last_line + 1):
-                line_start = f"{line_num}.0"
-                try:
-                    names = self.log.tag_names(line_start)
-                except tk.TclError:
-                    continue
-                if any(t in names for t in ("row_recent1", "row_recent2", "row_plain")):
-                    entry_lines.append(line_num)
-            # Exclude separator lines: Tk tag-range ends have right-gravity,
-            # so row_* tags on entry lines bleed into the adjacent separator
-            # line when the separator is inserted. Checking _separator_row
-            # first filters those phantom hits out.
-            entry_lines = [
-                n for n in entry_lines
-                if "_separator_row" not in self.log.tag_names(f"{n}.0")
-            ]
-            if len(entry_lines) <= MAX_VISIBLE_LOG_ENTRIES:
-                return
-            first_keeper = entry_lines[-MAX_VISIBLE_LOG_ENTRIES]
-            self.log.delete("1.0", f"{first_keeper}.0")
-            deleted = True
-        finally:
-            self.log.configure(state="disabled")
-        if deleted:
-            self._refresh_separators()
+        """Cap the visible log at MAX_VISIBLE_LOG_ENTRIES (oldest dropped).
+        Persistence (ready_log.txt) is NOT trimmed -- the on-disk record
+        stays complete for the day."""
+        self.log.trim(MAX_VISIBLE_LOG_ENTRIES)
 
     def _append_diag(self, text: str) -> None:
         line = f"[{now_str()}] {text}"
@@ -5136,78 +5409,20 @@ class ChairsideReadyAlertApp:
             self._diag_text.configure(state="disabled")
 
     def _append_ready_log(self, text: str, persist: bool = True) -> None:
-        """Outgoing Ready log path: no visual emphasis (no recent1/recent2 tag).
-        The line is inserted ABOVE the existing recent2 emphasis tier (or above
-        recent1 if there is no recent2 yet, or at the very end if neither
-        exists). This keeps the two bolded incoming lines pinned to the bottom
-        of the log even after the user sends a Ready themselves — at the cost
-        of putting outgoing entries momentarily out of chronological order
-        until another incoming Ready arrives.
+        """Outgoing Ready log path ("Sent → Room 2, Doctor\t[10:45 AM]").
+        Shown as a small muted line inserted ABOVE the two newest incoming
+        Readys (ReadyLog._insert_outgoing), which stay pinned to the bottom of
+        the log and visually dominant -- at the cost of putting outgoing
+        entries momentarily out of chronological order until another
+        incoming Ready arrives.
 
         persist=False is used by _load_ready_log when replaying entries on
         startup so we don't re-write to disk on every restored line."""
-        # Pick the insert position based on the current emphasis state.
-        #
-        # CRITICAL: use `linestart` on the chosen mark, not the mark itself.
-        # recent1_start / recent2_start point at the *body* start (the char
-        # right after the leading "\t"), not the line start -- they're set
-        # that way because the recent1 / recent2 font tags apply to the body
-        # only (so the timestamp stays at the log's default 10pt). Inserting
-        # text at the mark itself lands *between* the existing line's
-        # leading tab and its body, splitting the line into two malformed
-        # lines: the new outgoing line ends up with TWO leading tabs (its
-        # own plus the inherited one), which routes through the right-
-        # aligned tab2 stop and kicks the body to the timestamp column;
-        # the displaced recent2 line LOSES its leading tab entirely and
-        # renders body-at-x=0. Both symptoms compound on every subsequent
-        # send. Using `linestart` lands the new content at column 0 of the
-        # recent2 line, BEFORE its leading tab -- the inserted "\n" then
-        # splits cleanly into a new whole line for the outgoing entry,
-        # with the original recent2 line shifting down intact.
-        marks = self.log.mark_names()
-        if "recent2_start" in marks:
-            insert_at = self.log.index("recent2_start linestart")
-        elif "recent1_start" in marks:
-            insert_at = self.log.index("recent1_start linestart")
-        else:
-            insert_at = "end"
-
-        self.log.configure(state="normal")
-        try:
-            # Anchor before insert so we can tag the just-inserted line range.
-            # row_plain pads a default-font line up to the height of a
-            # recent1 line; see _apply_theme for the spacing math.
-            self.log.mark_set("_outgoing_anchor", insert_at)
-            self.log.mark_gravity("_outgoing_anchor", "left")
-            self.log.insert(insert_at, text.rstrip() + "\n")
-            ls = self.log.index("_outgoing_anchor")
-            le = self.log.index("_outgoing_anchor lineend +1c")
-            self.log.mark_unset("_outgoing_anchor")
-            self.log.tag_add("row_plain", ls, le)
-            # Track the outgoing body width too so the right tab stop
-            # accommodates 'Sent → <long target list>' just as it does
-            # for incoming bodies.
-            try:
-                first_tab = text.find("\t")
-                if first_tab >= 0:
-                    self._note_body_width(text[:first_tab], _ui_font(10))
-            except Exception:
-                pass
-        finally:
-            self.log.configure(state="disabled")
-
-        self._refresh_separators()
+        body, ts = _split_log_line(text)
+        if body.startswith("Sent → "):
+            body = body[len("Sent → "):]
+        self.log.add_outgoing(body, ts, animate=persist)
         self._trim_log_to_max_entries()
-        # Scroll to bottom AFTER _refresh_separators -- the rebuild inserts a
-        # new separator line above the most-recent entry, shifting it one
-        # line further down. Calling see("end") before the rebuild leaves
-        # the scroll anchored to a position that no longer contains the
-        # newest entry, clipping it just off the bottom of the visible area.
-        try:
-            self.log.see("end")
-        except tk.TclError:
-            pass
-
         if persist:
             self._persist_ready_log_line(text, direction="OUT")
 
@@ -5223,17 +5438,14 @@ class ChairsideReadyAlertApp:
     # Before 1.0.62 the timestamp appeared at the start of each line wrapped
     # in brackets; it now sits at the end so the eye reads "what happened"
     # before "when." Lines persisted in the old layout still load cleanly
-    # — _append_incoming_ready_log's body detection falls back to tagging
-    # the whole line if it can't find the "  [" body/timestamp separator.
+    # — _split_log_line canonicalizes every historical layout on load.
     #
     # The direction prefix (IN / OUT) lets _load_ready_log replay each line
     # through the same code path that handled it live: incoming lines go through
-    # _append_incoming_ready_log (which demotes prior recent1 → recent2 and
-    # tags the new line as recent1), and outgoing lines go through
-    # _append_ready_log (which inserts above the existing emphasis tier). The
-    # net effect is that the visual state immediately after startup matches the
-    # visual state immediately before shutdown — same two lines bolded, same
-    # order, same colors.
+    # _append_incoming_ready_log (newest incoming becomes the big card), and
+    # outgoing lines go through _append_ready_log (inserted above the two
+    # newest incoming Readys). The net effect is that the log immediately
+    # after startup matches the log immediately before shutdown.
     #
     # Legacy v1.0.38 files (no prefix) are restored as plain text — best we
     # can do without direction info. New entries from v1.0.39 onward use the
@@ -5288,16 +5500,14 @@ class ChairsideReadyAlertApp:
 
     def _load_ready_log(self) -> None:
         """Restore today's persisted Ready log into the Text widget on launch.
-        Called once after the UI is built and after _apply_theme has configured
-        the recent1/recent2/recent1_flash tags. Stale (older-day) logs are
+        Called once after the UI is built. Stale (older-day) logs are
         deleted so the new session starts clean.
 
         Each persisted line carries an IN/OUT prefix (since v1.0.39). Replay
-        runs them through the same appender as the live path with animate=
-        False / persist=False, so the visual state immediately after startup
-        matches the visual state at shutdown — the last incoming line is
-        recent1, the second-to-last incoming is recent2, everything else is
-        plain. Lines from a v1.0.38 file (no prefix) restore as plain text.
+        runs them through the same appenders as the live path with animate=
+        False / persist=False, so the log after startup matches the log at
+        shutdown -- same order, same newest incoming Ready in the big card.
+        Lines from a v1.0.38 file (no prefix) restore as plain rows.
         """
         path = self._ready_log_path()
         today = _today_iso()
@@ -5345,41 +5555,10 @@ class ChairsideReadyAlertApp:
                     migrated = "Sent → " + migrated[len("Ready → "):]
                 self._append_ready_log(migrated, persist=False)
             else:
-                # Legacy v1.0.38 row (no prefix) — best-effort plain insert,
-                # tagged row_plain so it lines up with everything else.
-                # Migrated through the same helper as IN/OUT lines so any
-                # pre-1.0.62 timestamp layouts also get canonicalized.
-                self.log.configure(state="normal")
-                try:
-                    migrated = _migrate_old_log_line(line)
-                    self.log.mark_set("_legacy_anchor", "end - 1c")
-                    self.log.mark_gravity("_legacy_anchor", "left")
-                    self.log.insert("end", migrated + "\n")
-                    ls = self.log.index("_legacy_anchor")
-                    le = self.log.index("_legacy_anchor lineend +1c")
-                    self.log.mark_unset("_legacy_anchor")
-                    self.log.tag_add("row_plain", ls, le)
-                finally:
-                    self.log.configure(state="disabled")
-        try:
-            self.log.see("end")
-        except tk.TclError:
-            pass
-        # Restored entries are inserted via the same paths as live ones,
-        # but each path's individual _refresh_separators() call accumulated
-        # an O(n^2) cost across the load. A single rebuild at the end is
-        # cheaper and produces the same final state.
-        self._refresh_separators()
+                # Legacy v1.0.38 row (no prefix) -- best-effort plain row.
+                body, ts = _split_log_line(line)
+                self.log.add_raw(f"{body}  {ts}".strip())
         self._trim_log_to_max_entries()
-        # _load_ready_log runs before deiconify(), so the canvas hasn't been
-        # realized yet when the individual appenders call log.see("end").
-        # That sets the yview while the widget is still at its default small
-        # height, leaving the scroll position stale once the canvas expands
-        # to fill the window. Re-run see("end") after the window is shown so
-        # the newest entry is anchored at the bottom of the visible area --
-        # if the panel can't fit all 6 entries vertically, the oldest scroll
-        # off (standard chronological-log behavior) instead of the newest.
-        self.root.after(50, lambda: self.log.see("end"))
 
     def _check_log_rollover(self) -> None:
         """Periodic (every 60s) check that the in-memory log + persistent file
@@ -5389,30 +5568,8 @@ class ChairsideReadyAlertApp:
             today = _today_iso()
             last = getattr(self, "_last_log_date", today)
             if today != last:
-                # New day — clear widget content.
-                self.log.configure(state="normal")
-                try:
-                    self.log.delete("1.0", "end")
-                finally:
-                    self.log.configure(state="disabled")
-                # Drop the recent1/recent2 tracking marks; nothing to point at.
-                for name in ("recent1_start", "recent1_end",
-                             "recent2_start", "recent2_end"):
-                    try:
-                        self.log.mark_unset(name)
-                    except tk.TclError:
-                        pass
-                # Destroy any leftover separator widgets and reset the
-                # monotonic body-width cap so tomorrow's narrower bodies
-                # don't sit under yesterday's wider tab stop.
-                for sep in list(self._separator_frames):
-                    try:
-                        sep.destroy()
-                    except Exception:
-                        pass
-                self._separator_frames.clear()
-                self._max_body_width_px = 0
-                self._refresh_log_tabstop()
+                # New day — clear the log.
+                self.log.clear()
                 # Wipe the persistent file — next append will rewrite the header.
                 try:
                     os.remove(self._ready_log_path())
@@ -5431,216 +5588,24 @@ class ChairsideReadyAlertApp:
     def _append_incoming_ready_log(
         self, text: str, animate: bool = True, persist: bool = True,
     ) -> None:
-        """Append an INCOMING Ready with visual emphasis on the newest line.
-        The previous newest line is demoted to a secondary emphasis tier and
-        any prior secondary line drops back to plain. Net result: at most two
-        bolded lines are visible at any moment — the last two incoming Readys.
+        """Append an INCOMING Ready ("Room 3: Ready\t[10:47 AM]"). It becomes
+        the big highlighted card at the bottom of the log; the previous
+        newest drops to the bold row just above it, and older ones to plain
+        rows.
 
-        animate=True (default) plays the smooth background-color flash
-        (~600ms cubic ease-out). animate=False suppresses it; used by
-        _load_ready_log to restore the previous session's hierarchy without
-        a flash on every cold line.
+        animate=True (default) plays the arrival animation (card slides up,
+        pulse ring, highlight fade). animate=False is used by _load_ready_log
+        to restore the previous session without animating every line.
 
         persist=True (default) writes the line to ready_log.txt with an IN
         prefix. persist=False suppresses the write; used during restore so we
-        don't re-write what we just read.
-
-        Why a background flash instead of a scale 'pop': Tk font sizes are
-        integer-only, so a CSS-style scale animation looks like discrete jumps
-        no matter how many frames we run. Background-color interpolation has
-        millions of unique values and animates silky-smooth at 50fps on both
-        Windows and macOS Tk."""
-        self.log.configure(state="normal")
-        try:
-            # Demote the existing recent1 → recent2, and clear the prior recent2.
-            # Each tier change swaps two things on the affected line:
-            #   - the body font tag (recent1 → recent2 → none) on the body
-            #     range bounded by the recentN_start / recentN_end marks
-            #   - the row tag (row_recent1 → row_recent2 → row_plain) on
-            #     the WHOLE line, since per-tag spacing1/spacing3 is what
-            #     equalizes line heights across font tiers
-            marks = self.log.mark_names()
-            if "recent2_start" in marks and "recent2_end" in marks:
-                try:
-                    r2s = self.log.index("recent2_start")
-                    r2e = self.log.index("recent2_end")
-                    self.log.tag_remove("recent2", r2s, r2e)
-                    # Swap the row tag for the (now-aging-out) recent2 line.
-                    # Use linestart / lineend to grab the whole line range —
-                    # the body marks only cover the emphasized text.
-                    r2_line_s = self.log.index(f"{r2s} linestart")
-                    r2_line_e = self.log.index(f"{r2s} lineend +1c")
-                    self.log.tag_remove("row_recent2", r2_line_s, r2_line_e)
-                    self.log.tag_add("row_plain", r2_line_s, r2_line_e)
-                except tk.TclError:
-                    pass
-                self.log.mark_unset("recent2_start")
-                self.log.mark_unset("recent2_end")
-            if "recent1_start" in marks and "recent1_end" in marks:
-                try:
-                    r1s = self.log.index("recent1_start")
-                    r1e = self.log.index("recent1_end")
-                    # Drop both the styling tag and any leftover flash tag.
-                    self.log.tag_remove("recent1", r1s, r1e)
-                    self.log.tag_remove("recent1_flash", r1s, r1e)
-                    self.log.tag_add("recent2", r1s, r1e)
-                    # Swap row tag on the WHOLE old-recent1 line.
-                    r1_line_s = self.log.index(f"{r1s} linestart")
-                    r1_line_e = self.log.index(f"{r1s} lineend +1c")
-                    self.log.tag_remove("row_recent1", r1_line_s, r1_line_e)
-                    self.log.tag_add("row_recent2", r1_line_s, r1_line_e)
-                    self.log.mark_set("recent2_start", r1s)
-                    # 'right' gravity: when _append_ready_log later inserts an
-                    # outgoing line AT this mark's position, the mark moves
-                    # right past the insertion and stays anchored to the start
-                    # of the (now displaced) recent2 line.
-                    self.log.mark_gravity("recent2_start", "right")
-                    self.log.mark_set("recent2_end", r1e)
-                    self.log.mark_gravity("recent2_end", "right")
-                except tk.TclError:
-                    pass
-                self.log.mark_unset("recent1_start")
-                self.log.mark_unset("recent1_end")
-
-            # Insert the new line and tag the just-inserted range as recent1.
-            # Anchor with 'left' gravity stays at the start of the inserted
-            # text — Tk inserts to the right of left-gravity marks. The anchor
-            # is temporary and is unset before we set the real recent1_start.
-            self.log.mark_set("_insert_anchor", "end - 1c")
-            self.log.mark_gravity("_insert_anchor", "left")
-            self.log.insert("end", text.rstrip() + "\n")
-            line_start = self.log.index("_insert_anchor")
-            line_end = self.log.index("end - 1c")
-            self.log.mark_unset("_insert_anchor")
-
-            # Font emphasis applies to the "Sender: Ready" body only — the
-            # leading "\t" centers the body on the center tab stop, and
-            # the trailing "\t[hh:mm AP]" right-aligns the timestamp at
-            # the second tab stop. Both tab stops are managed by
-            # _refresh_log_tabstop. The body's range is everything
-            # between the first and second tabs; tagging body-only keeps
-            # the timestamp at the log's default 10pt across every tier.
-            # If the separators can't be found (legacy data), fall back
-            # to emphasizing whatever's after the line's start.
-            first_tab = text.find("\t")
-            second_tab = text.find("\t", first_tab + 1) if first_tab >= 0 else -1
-            if first_tab >= 0 and second_tab >= 0:
-                try:
-                    body_start_index = self.log.index(f"{line_start} + {first_tab + 1}c")
-                    body_end_index = self.log.index(f"{line_start} + {second_tab}c")
-                except tk.TclError:
-                    body_start_index = line_start
-                    body_end_index = line_end
-            elif first_tab >= 0:
-                # Only one tab — assume the body is everything before it.
-                try:
-                    body_start_index = line_start
-                    body_end_index = self.log.index(f"{line_start} + {first_tab}c")
-                except tk.TclError:
-                    body_end_index = line_end
-            else:
-                body_start_index = line_start
-                body_end_index = line_end
-            self.log.tag_add("recent1", body_start_index, body_end_index)
-            # The flash tag tracks the same range. Concentrating the flash
-            # on the body matches the eye's focus to the emphasized text;
-            # the static timestamp does not need to flash.
-            self.log.tag_add("recent1_flash", body_start_index, body_end_index)
-            # Apply the row tag to the WHOLE line so the line's vertical
-            # spacing is governed by row_recent1 (spacing1=spacing3=0),
-            # not the larger widget defaults that pad smaller-font lines
-            # up to the recent1 line height. See _apply_theme for the
-            # spacing math.
-            self.log.tag_add("row_recent1", line_start, line_end)
-            self.log.mark_set("recent1_start", body_start_index)
-            # 'right' gravity: same reasoning as recent2_start above — keeps
-            # the mark anchored to the recent1 body even after an outgoing
-            # insert that pushes it down.
-            self.log.mark_gravity("recent1_start", "right")
-            self.log.mark_set("recent1_end", body_end_index)
-            self.log.mark_gravity("recent1_end", "right")
-
-            # Update the running maximum body pixel width so the right tab
-            # stop sits just past the widest body across all currently
-            # displayed lines. Uses the 15pt-bold metric for the new
-            # recent1 body and falls back gracefully if measurement fails.
-            try:
-                body_text = text[:first_tab] if first_tab >= 0 else text
-                self._note_body_width(body_text, _ttk_font(15, "bold"))
-            except Exception:
-                pass
-
-        finally:
-            self.log.configure(state="disabled")
-
-        # Rebuild separator widgets between adjacent log entries.
-        self._refresh_separators()
+        don't re-write what we just read."""
+        body, ts = _split_log_line(text)
+        sender = body[:-len(": Ready")] if body.endswith(": Ready") else body
+        self.log.add_incoming(sender, ts, animate=animate)
         self._trim_log_to_max_entries()
-        # Scroll to bottom AFTER _refresh_separators -- the rebuild inserts a
-        # new separator line above the newest entry, shifting it one line
-        # further down. Calling see("end") before the rebuild leaves the
-        # scroll anchored to a position that no longer contains the newest
-        # entry, clipping it just off the bottom of the visible area.
-        try:
-            self.log.see("end")
-        except tk.TclError:
-            pass
-
-        if animate:
-            self._animate_recent1_flash()
         if persist:
             self._persist_ready_log_line(text, direction="IN")
-
-    @staticmethod
-    def _lerp_hex_color(c1: str, c2: str, t: float) -> str:
-        """Linear interpolation between two #rrggbb hex colors. t in [0, 1]."""
-        def _parse(c: str) -> tuple[int, int, int]:
-            c = c.lstrip("#")
-            return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
-        t = max(0.0, min(1.0, t))
-        r1, g1, b1 = _parse(c1)
-        r2, g2, b2 = _parse(c2)
-        r = int(round(r1 + (r2 - r1) * t))
-        g = int(round(g1 + (g2 - g1) * t))
-        b = int(round(b1 + (b2 - b1) * t))
-        return f"#{r:02x}{g:02x}{b:02x}"
-
-    def _animate_recent1_flash(self) -> None:
-        """Smoothly fade the recent1_flash tag's background from theme
-        'highlight' down to 'log_bg' over ~600ms (30 frames at 20ms = 50fps).
-        Uses cubic ease-out so the highlight is most visible immediately on
-        arrival and the tail of the fade is gentle. Reuses an integer
-        sequence counter to abort superseded animations (back-to-back Readys
-        or a theme change mid-fade)."""
-        self._recent1_anim_seq = getattr(self, "_recent1_anim_seq", 0) + 1
-        seq = self._recent1_anim_seq
-
-        theme = getattr(self, "_current_theme", THEMES[DEFAULT_THEME])
-        highlight = theme.get("highlight", theme["log_bg"])
-        log_bg = theme["log_bg"]
-
-        n_frames = 30   # 30 × 20ms = 600ms total
-        frame_ms = 20
-
-        for i in range(n_frames + 1):
-            t = i / n_frames                # 0..1 linear
-            eased = 1.0 - (1.0 - t) ** 3    # cubic ease-out
-            bg = self._lerp_hex_color(highlight, log_bg, eased)
-
-            def _frame(b=bg, k=seq, last=(i == n_frames)) -> None:
-                if k != self._recent1_anim_seq:
-                    return  # superseded
-                try:
-                    # On the final frame, snap exactly to log_bg so subsequent
-                    # appends (which inherit the current tag bg) start clean.
-                    self.log.tag_configure(
-                        "recent1_flash",
-                        background=log_bg if last else b,
-                    )
-                except tk.TclError:
-                    pass
-
-            self.root.after(i * frame_ms, _frame)
 
     def _open_connection_log_window(self) -> None:
         if self._diag_win is not None and self._diag_win.winfo_exists():
@@ -6032,6 +5997,7 @@ class ChairsideReadyAlertApp:
             return
         client.send_chat(targets, message, self.alert_sound_var.get(), int(self.alert_volume_var.get()))
         self._append_ready_log(f"Sent → {', '.join(targets)}\t[{now_str_short()}]")
+        self._show_ready_sent(targets[0] if len(targets) == 1 else f"{len(targets)} stations")
         self._maybe_trigger_whimsy()
 
     def send_ready_all(self) -> None:
@@ -6059,7 +6025,17 @@ class ChairsideReadyAlertApp:
             return
         client.send_chat(["ALL"], message)
         self._append_ready_log(f"Sent → All\t[{now_str_short()}]")
+        self._show_ready_sent("all stations")
         self._maybe_trigger_whimsy()
+
+    def _show_ready_sent(self, who: str) -> None:
+        """Brief green "✓ Sent to ..." confirmation on the Ready button."""
+        btn = getattr(self, "_ready_btn_widget", None)
+        if btn is not None:
+            try:
+                btn.show_sent(f"Sent to {who}")
+            except tk.TclError:
+                pass
 
     def _maybe_trigger_whimsy(self) -> None:
         """Called after every outgoing Ready. Asks the trigger if this send
