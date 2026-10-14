@@ -894,10 +894,39 @@ def _draw_button_mask(canvas: tk.Canvas, button: dict) -> None:
         x0, y1,     x0, y1 - r,  x0, y0 + r,  x0, y0,
     ]
     canvas.create_polygon(pts, smooth=True, fill=color, outline="")
-    canvas.create_text(
-        x, y, text=label, fill=text_color,
-        font=_button_label_font(int(h)),
-    )
+    color2 = button.get("color2")
+    if color2 and color2 != color:
+        _gradient_strips(canvas, x0, y0, x1, y1, r, color, color2)
+    font = button.get("font") or _button_label_font(int(h))
+    subtitle = button.get("subtitle") or ""
+    if subtitle:
+        canvas.create_text(x, y - h * 0.15, text=label, fill=text_color, font=font)
+        canvas.create_text(x, y + h * 0.25, text=subtitle, fill=text_color,
+                           font=(font[0], max(8, int(font[1]) // 2)))
+    else:
+        canvas.create_text(x, y, text=label, fill=text_color, font=font)
+
+
+def _gradient_strips(canvas: tk.Canvas, x0, y0, x1, y1, r, c1: str, c2: str) -> None:
+    """Left-to-right gradient fill clipped to a rounded rect (matches the
+    ReadyButton body in chairside_ready_alert)."""
+    def rgb(c):
+        c = c.lstrip("#")
+        return [int(c[i:i + 2], 16) for i in (0, 2, 4)]
+    try:
+        a, b = rgb(c1), rgb(c2)
+    except (ValueError, IndexError):
+        return
+    w = int(x1 - x0)
+    for i in range(0, w, 2):
+        x = x0 + i + 1
+        d = (x0 + r - x) if x < x0 + r else (x - (x1 - r)) if x > x1 - r else 0.0
+        inset = r - math.sqrt(max(0.0, r * r - d * d)) if d > 0 else 0.0
+        if y1 - y0 - 2 * inset < 1:
+            continue
+        t = i / max(1, w)
+        col = "#%02x%02x%02x" % tuple(int(p + (q - p) * t) for p, q in zip(a, b))
+        canvas.create_line(x, y0 + inset, x, y1 - inset, width=2, fill=col)
 
 
 def _button_label_font(button_h: int) -> tuple:
@@ -1319,8 +1348,13 @@ def play_animation(
 
         btn_w = int(button_widget.winfo_width())      # type: ignore[attr-defined]
         btn_h = int(button_widget.winfo_height())     # type: ignore[attr-defined]
-        bx_screen = button_widget.winfo_rootx() + btn_w // 2  # type: ignore[attr-defined]
-        by_screen = button_widget.winfo_rooty() + btn_h // 2  # type: ignore[attr-defined]
+        # Buttons that draw their own shadow (ReadyButton) report the margin
+        # around the visible body so the mask lines up with the body itself.
+        inset = getattr(button_widget, "_body_inset", None) or (0, 0, 0, 0)
+        btn_w = max(1, btn_w - inset[0] - inset[2])
+        btn_h = max(1, btn_h - inset[1] - inset[3])
+        bx_screen = button_widget.winfo_rootx() + inset[0] + btn_w // 2  # type: ignore[attr-defined]
+        by_screen = button_widget.winfo_rooty() + inset[1] + btn_h // 2  # type: ignore[attr-defined]
     except tk.TclError:
         return None
 
@@ -1350,6 +1384,9 @@ def play_animation(
         "text_color": btn_text_color,
         "label": btn_label,
         "radius": btn_radius,
+        "color2": getattr(button_widget, "_bg2", None),
+        "subtitle": getattr(button_widget, "_subtitle", ""),
+        "font": getattr(button_widget, "_label_font", None),
     }
 
     def _done() -> None:

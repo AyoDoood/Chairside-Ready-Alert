@@ -25,12 +25,12 @@ There is **no test suite, no linter config, and no CI for verifying code correct
 - `LanDiscovery` (chairside_ready_alert.py:526) — UDP broadcast/listen on port 50506 (`DISCOVERY_PORT`) for zero-config peer discovery. Peers broadcast JSON beacons every 2.5s; stale after 12s.
 - `MessageServer` (chairside_ready_alert.py:713) and `MessageClient` (chairside_ready_alert.py:883) — TCP messaging layer; peers connect to each other on port 50505 (`DEFAULT_PORT`) to send alert messages. The `is_server` config flag is vestigial; the app is fully peer-to-peer.
 - `SingleInstanceLock` (chairside_ready_alert.py:275) — guards against double-launch (see "Single-instance lock" below).
-- Custom Tk widgets — `RoundedCard` (:978), `RoundedLogPanel` (:1034), `RoundedButton` (:1127). These are the visual primitives; theme dicts in `THEMES` (chairside_ready_alert.py:357) drive their colors.
+- Custom Tk widgets (all Canvas-drawn, sized through `_px()` so geometry follows Tk point scaling — Windows 125/150% and macOS look the same): `RoundedCard` (:1804), `ReadyLog` (:1862, the Ready Messages panel — incoming pinned to the bottom, newest as a hero card, outgoing above the two newest), `ReadyButton` (:2096, gradient send button with live subtitle + green "Sent" confirmation; exposes `_bg`/`_bg2`/`_fg`/`_text`/`_r`/`_body_inset`/`_label_font` for `ready_animations`), `StationChip` (:2239, bound to the `self.target_vars` BooleanVars), `VolumeSlider` (:2305), `IconButton` (:2363), `AppLogo` (:2404), `StatusPill` (:2423, header LAN status). Theme dicts in `THEMES` (chairside_ready_alert.py:567) drive their colors; station identity colors come from `_station_color()`.
 - System tray — `pystray` + `pillow`; loaded lazily with a fallback repair path if missing.
 
 **Threading model (important).** The Tkinter UI runs on the main thread. `LanDiscovery`, `MessageServer`, and `MessageClient` each run on background threads and post events through a `queue.Queue` drained by a `root.after(...)` poll on the UI thread. Any new background work must use the same queue — direct Tk calls from a non-main thread will crash on macOS.
 
-**Themes**: `Modern Blue`, `Sage Clinic`, `Rose Quartz` — defined as dicts in `THEMES`.
+**Themes**: `Modern Blue`, `Sage Clinic`, `Rose Quartz`, `Lagoon`, `Midnight` (dark) — defined as dicts in `THEMES`. Every theme must define every key used by the widgets (`input_bg`, `slider_track`, `highlight`, `ink`, etc.).
 
 **Alert sounds**: 15 synthesized sounds generated at runtime (no audio files needed). Sample rate: 22050 Hz, output via `wave` + platform audio.
 
