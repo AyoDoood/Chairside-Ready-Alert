@@ -1781,17 +1781,26 @@ def _font(size: int, weight: str = "normal") -> tkfont.Font:
     return f
 
 
-def _elapsed_label(ts: str, now: Optional[datetime] = None) -> str:
-    """'just now' / '4 min ago' / '1 hr 5 min ago' for a today's 'hh:mm AP'
-    timestamp. '' if the stamp can't be parsed or lies in the future."""
+def _elapsed_label(ts: str, now: Optional[datetime] = None,
+                   received: Optional[datetime] = None) -> str:
+    """'just now' / '4 min ago' / '1 hr 5 min ago'. Measured from `received`
+    (this station's clock when the Ready arrived) when known, so a sender
+    whose clock runs ahead doesn't hide the age; otherwise from today's
+    timestamp `ts`. '' if neither can be used."""
     now = now or datetime.now()
-    try:
-        t = datetime.strptime(ts.strip(), "%I:%M %p").replace(
-            year=now.year, month=now.month, day=now.day)
-    except ValueError:
-        return ""
+    t = received
+    if t is None:
+        for fmt in ("%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"):
+            try:
+                t = datetime.strptime(ts.strip(), fmt).replace(
+                    year=now.year, month=now.month, day=now.day)
+                break
+            except ValueError:
+                continue
+        else:
+            return ""
     mins = int((now - t).total_seconds() // 60)
-    if mins < 0:
+    if mins < -5:
         return ""
     if mins < 1:
         return "just now"
@@ -1871,7 +1880,9 @@ class ReadyLog(tk.Canvas):
     ABOVE the two newest incoming Readys (_insert_outgoing), so an incoming
     Ready is never pushed off the bottom by your own sends.
 
-    Entries: ("in", sender, ts) | ("out", targets, ts) | ("raw", text, "").
+    Entries: ("in", sender, ts, received_at|None) | ("out", targets, ts) |
+    ("raw", text, ""). received_at is set for live arrivals so the age
+    doesn't depend on the sender's clock.
     """
 
     ARRIVE_SEC = 1.1
@@ -1879,7 +1890,7 @@ class ReadyLog(tk.Canvas):
     def __init__(self, parent, theme: dict) -> None:
         super().__init__(parent, highlightthickness=0, bd=0, bg=theme["card_bg"], height=_px(170))
         self.th = theme
-        self.entries: list[tuple[str, str, str]] = []
+        self.entries: list[tuple] = []
         self._arrive_t0 = -10.0
         self._sent_t0 = -10.0
         self._sent_entry: Optional[tuple] = None
@@ -1892,7 +1903,7 @@ class ReadyLog(tk.Canvas):
 
     # ---- model ----
     def add_incoming(self, sender: str, ts: str, animate: bool = True) -> None:
-        self.entries.append(("in", sender, ts))
+        self.entries.append(("in", sender, ts, datetime.now() if animate else None))
         if animate:
             self._arrive_t0 = time.monotonic()
             self._unacked = True
@@ -1997,7 +2008,7 @@ class ReadyLog(tk.Canvas):
         first_in = True
         shown_rows = 0
         for entry in reversed(rows):
-            kind, name, ts = entry
+            kind, name, ts = entry[:3]
             if kind == "in":
                 rh = _px(36 if first_in else 30)
             else:
@@ -2055,7 +2066,7 @@ class ReadyLog(tk.Canvas):
     def _draw_hero(self, entry: tuple, L: int, R: int, H: int, dark: bool) -> float:
         th = self.th
         card = th["card_bg"]
-        _, name, ts = entry
+        _, name, ts = entry[:3]
         color = _station_color(name)
         now = time.monotonic()
         k = min(1.0, (now - self._arrive_t0) / self.ARRIVE_SEC)
@@ -2079,7 +2090,7 @@ class ReadyLog(tk.Canvas):
         right_w = max(ts_f.measure(ts), _font(9, "bold").measure("NEW") + _px(22))
         self.create_text(tx, ay - _px(12), anchor="w", fill=th.get("emph_dark", th["text"]), font=name_f,
                          text=_elide(name_f, name, int(R - _px(24) - right_w - tx)))
-        ago = _elapsed_label(ts)
+        ago = _elapsed_label(ts, received=entry[3] if len(entry) > 3 else None)
         detail = "is ready for you" + (f"  ·  {ago}" if ago else "")
         self.create_text(tx, ay + _px(15), text=detail, anchor="w", fill=th["sub"], font=_font(11))
         self.create_text(R - _px(18), ay - _px(11), text=ts, anchor="e", fill=th["text"], font=ts_f)
