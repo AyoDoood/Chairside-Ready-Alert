@@ -2087,13 +2087,14 @@ class ReadyLog(tk.Canvas):
         self.create_text(ax, ay, text=ini, fill="#ffffff", font=_font(14 if len(ini) < 3 else 12, "bold"))
         name_f, ts_f = _font(19, "bold"), _font(13, "bold")
         tx = ax + ar + _px(16)
-        right_w = max(ts_f.measure(ts), _font(9, "bold").measure("NEW") + _px(22))
+        # Bold age ("31 min ago") in place of the clock time; the clock time
+        # is only a fallback when the age can't be worked out.
+        ago = _elapsed_label(ts, received=entry[3] if len(entry) > 3 else None) or ts
+        right_w = max(ts_f.measure(ago), _font(9, "bold").measure("NEW") + _px(22))
         self.create_text(tx, ay - _px(12), anchor="w", fill=th.get("emph_dark", th["text"]), font=name_f,
                          text=_elide(name_f, name, int(R - _px(24) - right_w - tx)))
-        ago = _elapsed_label(ts, received=entry[3] if len(entry) > 3 else None)
-        detail = "is ready for you" + (f"  ·  {ago}" if ago else "")
-        self.create_text(tx, ay + _px(15), text=detail, anchor="w", fill=th["sub"], font=_font(11))
-        self.create_text(R - _px(18), ay - _px(11), text=ts, anchor="e", fill=th["text"], font=ts_f)
+        self.create_text(tx, ay + _px(15), text="is ready for you", anchor="w", fill=th["sub"], font=_font(11))
+        self.create_text(R - _px(18), ay - _px(11), text=ago, anchor="e", fill=th["text"], font=ts_f)
         if self._unacked:
             pf = _font(9, "bold")
             pw = pf.measure("NEW") + _px(20)
