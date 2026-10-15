@@ -345,7 +345,6 @@ def _decor_sunglasses(canvas, head_x, head_y, head_r, body_angle, *, scale, stro
             outline=color, fill=color, width=1,
         )
     # Bridge between the lenses (perpendicular to body axis)
-    bridge_y = head_r * 0.05
     lb = _project(eye_center_x, eye_center_y, eye_offset - lens_r, body_angle + 90)
     rb = _project(eye_center_x, eye_center_y, eye_offset - lens_r, body_angle - 90)
     canvas.create_line(lb[0], lb[1], rb[0], rb[1],
