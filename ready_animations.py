@@ -29,7 +29,7 @@ Architecture (so the picker preview is pixel-identical to production):
   - ANIMATIONS maps a stable id to {name, duration_ms, scene}. Both the
     picker and the main app iterate it.
   - AnimationTrigger counts qualifying outgoing Ready sends (10-minute
-    spacing) and fires after a random 4-8. Config helpers read/write the
+    spacing) and fires after a random 3-5. Config helpers read/write the
     SAME config file as the main app ("animation_preferences").
 
 Run the picker separately:
@@ -3945,8 +3945,8 @@ class AnimationTrigger:
     unit tests stay deterministic."""
 
     MIN_SPACING_SEC = 10 * 60
-    MIN_COUNT = 4
-    MAX_COUNT = 8
+    MIN_COUNT = 3
+    MAX_COUNT = 5
 
     # When True, on_ready_sent() always returns True regardless of the
     # spacing/count rules. Useful while iterating on animation choreography —
