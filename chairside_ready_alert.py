@@ -1889,12 +1889,10 @@ class ReadyLog(tk.Canvas):
 
     Hierarchy (user requirement, unchanged from the Text-widget log):
     incoming Readys are pinned to the BOTTOM. The newest is a large card in
-    the theme accent with a live "4 min ago" and a NEW badge that
-    stays until someone touches this window; the second-newest is a bold row
-    right above it; older incoming Readys are plain rows. Outgoing "You sent
-    Ready to …" confirmations are small muted rows that are always inserted
-    ABOVE the two newest incoming Readys (_insert_outgoing), so an incoming
-    Ready is never pushed off the bottom by your own sends.
+    the theme accent with a live "4 min ago" and a NEW badge that stays until
+    someone touches this window; all other incoming Readys are plain rows.
+    Outgoing "You sent Ready to …" confirmations are small muted rows inserted
+    directly ABOVE the newest incoming Ready (_insert_outgoing).
 
     Entries: ("in", sender, ts, received_at|None) | ("out", targets, ts) |
     ("raw", text, ""). received_at is set for live arrivals so the age
@@ -1939,7 +1937,7 @@ class ReadyLog(tk.Canvas):
     def _insert_outgoing(self, entry: tuple) -> None:
         incoming = [i for i, e in enumerate(self.entries) if e[0] == "in"]
         if incoming:
-            self.entries.insert(incoming[-2] if len(incoming) >= 2 else incoming[-1], entry)
+            self.entries.insert(incoming[-1], entry)
         else:
             self.entries.append(entry)
 
@@ -1993,6 +1991,9 @@ class ReadyLog(tk.Canvas):
         except tk.TclError:
             pass
 
+    def _text_x(self, L) -> int:
+        return L + _px(18) + _px(22) + _px(22) + _px(16)
+
     # ---- rendering ----
     def _draw(self) -> None:
         try:
@@ -2021,12 +2022,11 @@ class ReadyLog(tk.Canvas):
         y = H
         if rows[-1][0] == "in":
             y = self._draw_hero(rows.pop(), L, R, H, dark) - _px(4)
-        first_in = True
         shown_rows = 0
         for entry in reversed(rows):
             kind, name, ts = entry[:3]
             if kind == "in":
-                rh = _px(36 if first_in else 30)
+                rh = _px(30)
             else:
                 rh = _px(26)
             more_after = len(rows) - shown_rows - 1
@@ -2038,33 +2038,21 @@ class ReadyLog(tk.Canvas):
             shown_rows += 1
             cy = y - rh / 2
             if kind == "in":
-                strong = first_in
-                first_in = False
-                color = th["accent"]
-                if strong:
-                    _rrect(self, L, y - rh + _px(2), R, y - _px(2), _px(10),
-                           fill=_mix(card, color, 0.07 if not dark else 0.14), outline="")
-                ar = _px(12 if strong else 10)
-                ax = L + _px(22)
-                self.create_oval(ax - ar, cy - ar, ax + ar, cy + ar, fill=color, outline="")
-                self.create_text(ax, cy, text=_station_initials(name), fill="#ffffff",
-                                 font=_font(8 if len(_station_initials(name)) > 2 else 9, "bold"))
-                nf = _font(12 if strong else 11, "bold" if strong else "normal")
-                tx = ax + ar + _px(12)
+                tx = self._text_x(L)
+                nf = _font(11)
                 shown = _elide(nf, name, R - _px(150) - tx)
-                self.create_text(tx, cy, text=shown, anchor="w",
-                                 fill=th.get("emph_dark", text) if strong else text, font=nf)
+                self.create_text(tx, cy, text=shown, anchor="w", fill=text, font=nf)
                 self.create_text(tx + nf.measure(shown) + _px(6), cy, text="is ready", anchor="w",
-                                 fill=sub, font=_font(11 if strong else 10))
+                                 fill=sub, font=_font(10))
                 self.create_text(R - _px(12), cy, text=ts, anchor="e",
-                                 fill=text if strong else sub, font=_font(10, "bold" if strong else "normal"))
+                                 fill=sub, font=_font(10))
             else:
                 if entry == self._sent_entry:
                     k = min(1.0, (time.monotonic() - self._sent_t0) / self.ARRIVE_SEC)
                     if k < 1:
                         _rrect(self, L, y - rh + 1, R, y - 1, _px(8),
                                fill=_mix(th["highlight"], card, k), outline="")
-                ax = L + _px(22)
+                ax = L + _px(18) + _px(22)
                 s = _px(5)
                 # small "outgoing" arrow
                 self.create_line(ax - s, cy + s, ax + s, cy - s, fill=sub, width=1.6, capstyle="round")
@@ -2072,7 +2060,8 @@ class ReadyLog(tk.Canvas):
                                  fill=sub, width=1.6, capstyle="round", joinstyle="round")
                 f = _font(9)
                 label = f"You sent Ready to {name}" if kind == "out" else name
-                self.create_text(ax + _px(22), cy, text=_elide(f, label, R - _px(110) - ax), anchor="w",
+                tx = self._text_x(L)
+                self.create_text(tx, cy, text=_elide(f, label, R - _px(110) - tx), anchor="w",
                                  fill=sub, font=f)
                 if ts:
                     self.create_text(R - _px(12), cy, text=ts, anchor="e", fill=sub, font=_font(9))
@@ -2102,7 +2091,7 @@ class ReadyLog(tk.Canvas):
         ini = _station_initials(name)
         self.create_text(ax, ay, text=ini, fill="#ffffff", font=_font(14 if len(ini) < 3 else 12, "bold"))
         name_f, ts_f = _font(19, "bold"), _font(13, "bold")
-        tx = ax + ar + _px(16)
+        tx = self._text_x(L)
         # Bold age ("31 min ago") in place of the clock time; the clock time
         # is only a fallback when the age can't be worked out.
         ago = _elapsed_label(ts, received=entry[3] if len(entry) > 3 else None) or ts
@@ -5569,7 +5558,7 @@ class ChairsideReadyAlertApp:
 
     def _append_ready_log(self, text: str, persist: bool = True) -> None:
         """Outgoing confirmation ('Sent → A, B\\t[ts]'). Rendered by ReadyLog
-        above the two newest incoming Readys. persist=False is the replay path
+        directly above the newest incoming Ready. persist=False is the replay path
         used by _load_ready_log."""
         body, ts = self._split_log_text(text)
         if body.startswith("Sent → "):
