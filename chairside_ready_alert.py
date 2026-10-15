@@ -1653,10 +1653,15 @@ class MessageClient:
 # ---------------------------------------------------------------------------
 # UI primitives (redesign). Everything below is plain Canvas drawing -- no
 # extra dependencies. Geometry goes through _px() so it scales with Tk's
-# pixels-per-point (≈1.0 on macOS, ≈1.33 on Windows at 100%), which keeps
-# Mac-tuned spacing from crowding text on Windows.
+# pixels-per-point and the screen-relative zoom on Windows/Linux; macOS keeps
+# its legacy scale.
 # ---------------------------------------------------------------------------
 _UI_SCALE = 1.0
+_DESIGN_W_PT = 980 * 0.75
+_DESIGN_H_PT = 840 * 0.75
+WINDOW_SCREEN_HEIGHT_FRACTION = 0.73
+_ZOOM_MIN, _ZOOM_MAX = 0.75, 2.0
+_UI_ZOOM = 1.0
 
 
 def _init_ui_scale(root: tk.Misc) -> None:
@@ -1667,8 +1672,33 @@ def _init_ui_scale(root: tk.Misc) -> None:
         _UI_SCALE = 1.0
 
 
+def _apply_screen_relative_zoom(root: tk.Misc) -> tuple[int, int] | None:
+    """Scale the designed layout to a fraction of the screen height."""
+    global _UI_ZOOM
+    if sys.platform == "darwin":
+        return None
+    try:
+        base = float(root.winfo_fpixels("1p"))
+        sh, sw = root.winfo_screenheight(), root.winfo_screenwidth()
+        zoom = sh * WINDOW_SCREEN_HEIGHT_FRACTION / (_DESIGN_H_PT * base)
+        zoom = max(_ZOOM_MIN, min(_ZOOM_MAX, zoom))
+        zoom = min(zoom, 0.95 * sw / (_DESIGN_W_PT * base))
+        root.tk.call("tk", "scaling", base * zoom)
+        _UI_ZOOM = zoom
+        return (
+            round(_DESIGN_W_PT * base * zoom),
+            round(_DESIGN_H_PT * base * zoom),
+        )
+    except (tk.TclError, ValueError, ZeroDivisionError):
+        return None
+
+
 def _px(n: float) -> int:
     return int(round(n * _UI_SCALE))
+
+
+def _win_px(n: float) -> int:
+    return int(round(n * _UI_ZOOM))
 
 
 def _hex_rgb(c: str) -> tuple[int, int, int]:
@@ -2579,11 +2609,15 @@ class ChairsideReadyAlertApp:
         self.root = root
         _init_ui_family(root)
         self.root.title(APP_TITLE)
-        # Taller than the old 760 so the Ready log shows ~6 rows at Windows 100%
-        # scaling, but never taller than the screen allows.
-        _h = max(700, min(840, self.root.winfo_screenheight() - 80))
-        self.root.geometry(f"980x{_h}")
-        self.root.minsize(940, 700)
+        _window_size = _apply_screen_relative_zoom(root)
+        if _window_size is not None:
+            _w, _h = _window_size
+            self.root.geometry(f"{_w}x{_h}")
+            self.root.minsize(round(_w * 940 / 980), round(_h * 700 / 840))
+        else:
+            _h = max(700, min(840, self.root.winfo_screenheight() - 80))
+            self.root.geometry(f"980x{_h}")
+            self.root.minsize(940, 700)
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
@@ -5036,7 +5070,7 @@ class ChairsideReadyAlertApp:
         t = self._current_theme
         win = tk.Toplevel(self.root)
         win.title("Network Settings")
-        win.geometry("420x260")
+        win.geometry(f"{_win_px(420)}x{_win_px(260)}")
         win.resizable(False, False)
         win.transient(self.root)
         win.grab_set()
@@ -5151,7 +5185,7 @@ class ChairsideReadyAlertApp:
         t = self._current_theme
         win = tk.Toplevel(self.root)
         win.title(f"{APP_TITLE} — Cannot see other workstations")
-        win.geometry("600x540")
+        win.geometry(f"{_win_px(600)}x{_win_px(540)}")
         win.resizable(False, False)
         win.transient(self.root)
         win.configure(bg=t["bg"])
@@ -5707,7 +5741,7 @@ class ChairsideReadyAlertApp:
             return
         win = tk.Toplevel(self.root)
         win.title("Connection log")
-        win.geometry("640x320")
+        win.geometry(f"{_win_px(640)}x{_win_px(320)}")
         win.transient(self.root)
         frame = ttk.Frame(win, padding=8)
         frame.pack(fill="both", expand=True)
