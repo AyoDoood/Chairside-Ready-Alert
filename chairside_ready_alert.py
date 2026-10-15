@@ -1764,20 +1764,6 @@ def _draw_check(cv: tk.Canvas, cx, cy, s, color: str, width: float = 2.0, tags="
                    capstyle="round", joinstyle="round", tags=tags)
 
 
-# Station identity colors: each station name always maps to the same hue, in
-# the log avatars AND the Send-to chips, so "the orange one is Room 3" becomes
-# recognisable at a glance from across the operatory.
-_STATION_PALETTE = ("#2563eb", "#d97706", "#7c3aed", "#059669", "#db2777",
-                    "#0891b2", "#0d9488", "#4f46e5", "#16a34a", "#c2410c")
-
-
-def _station_color(name: str) -> str:
-    h = 0
-    for ch in name.strip().lower():
-        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
-    return _STATION_PALETTE[h % len(_STATION_PALETTE)]
-
-
 def _station_initials(name: str) -> str:
     words = [w for w in name.replace("-", " ").split() if w]
     if not words:
@@ -1903,7 +1889,7 @@ class ReadyLog(tk.Canvas):
 
     Hierarchy (user requirement, unchanged from the Text-widget log):
     incoming Readys are pinned to the BOTTOM. The newest is a large card in
-    the sender's station color with a live "4 min ago" and a NEW badge that
+    the theme accent with a live "4 min ago" and a NEW badge that
     stays until someone touches this window; the second-newest is a bold row
     right above it; older incoming Readys are plain rows. Outgoing "You sent
     Ready to …" confirmations are small muted rows that are always inserted
@@ -2054,7 +2040,7 @@ class ReadyLog(tk.Canvas):
             if kind == "in":
                 strong = first_in
                 first_in = False
-                color = _station_color(name)
+                color = th["accent"]
                 if strong:
                     _rrect(self, L, y - rh + _px(2), R, y - _px(2), _px(10),
                            fill=_mix(card, color, 0.07 if not dark else 0.14), outline="")
@@ -2097,7 +2083,7 @@ class ReadyLog(tk.Canvas):
         th = self.th
         card = th["card_bg"]
         _, name, ts = entry[:3]
-        color = _station_color(name)
+        color = th["accent"]
         now = time.monotonic()
         k = min(1.0, (now - self._arrive_t0) / self.ARRIVE_SEC)
         ease = 1 - (1 - k) ** 3
@@ -2279,7 +2265,7 @@ class ReadyButton(tk.Canvas):
 
 class StationChip(tk.Canvas):
     """Selectable station pill bound to a BooleanVar (Send to). Unselected:
-    soft outline with the station's identity-colored dot. Selected: accent
+    soft outline with a theme-accent dot. Selected: accent
     fill with a check."""
 
     def __init__(self, parent, text: str, var: tk.BooleanVar, theme: dict) -> None:
@@ -2326,7 +2312,7 @@ class StationChip(tk.Canvas):
             _rrect(self, 1, 1, w - 2, h - 2, r, fill=fill, outline=edge, width=1)
             fg = th["text"]
             d = _px(5)
-            self.create_oval(dx - d, h / 2 - d, dx + d, h / 2 + d, fill=_station_color(self.text), outline="")
+            self.create_oval(dx - d, h / 2 - d, dx + d, h / 2 + d, fill=th["accent"], outline="")
         self.create_text(dx + _px(13), h / 2, text=self.text, anchor="w", fill=fg, font=self._f)
 
 
