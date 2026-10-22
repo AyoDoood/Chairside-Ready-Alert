@@ -1,7 +1,7 @@
 {
-  "version": "1.0.87",
+  "version": "1.0.88",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "A more compact window that fits smaller and lower-resolution screens.\n\n- The window is about a third shorter and sizes itself to fit your screen, while always showing the newest Ready plus at least three older messages.\n- The Ready button now sits beside Ready Messages and grows and shrinks with the window. After a send it briefly turns green and shows who you sent to.\n- One-line header: \"This station: ... Edit\" now sits next to the stations-online indicator.\n- Alert sound and volume are on one line, with the Send to stations below them.\n- Times are right-aligned next to each Ready message.",
+  "release_notes": "The Ready button now has its own panel.\n\n- Ready Messages and the Ready button sit in two separate side-by-side panels.\n- The Ready button lines up with the top of the message list (just below the \"READY MESSAGES\" title) and grows and shrinks with the window.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
