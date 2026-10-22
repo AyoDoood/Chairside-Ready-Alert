@@ -12,12 +12,13 @@ import math
 import re
 import shutil
 import io
+import base64
 import hashlib
 import ssl
 import urllib.error
 import urllib.request
 import webbrowser
-from collections import deque
+from collections import OrderedDict, deque
 import queue
 import socket
 import stat
@@ -122,7 +123,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.90"
+APP_VERSION = "1.0.91"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1801,7 +1802,173 @@ def _is_dark(color: str) -> bool:
     return (0.299 * r + 0.587 * g + 0.114 * b) < 90
 
 
+# ---------------------------------------------------------------------------
+# Smooth (anti-aliased) shapes on Windows.
+#
+# Tk's canvas antialiases on macOS but not on Windows (plain GDI), so
+# rounded corners, circles and triangles came out stair-stepped there. On
+# Windows, when Pillow is available, the curved parts are rendered as small
+# supersampled images with alpha: a rounded rectangle becomes plain
+# rectangles (straight edges need no smoothing) plus four corner images; a
+# circle is one image. Images are cached by size + colors and handed to Tk
+# as PNG data (Tk 8.6 reads PNG with alpha natively -- no PIL.ImageTk, which
+# frozen builds may not bundle). Everything falls back to the plain Tk
+# shapes on macOS, without Pillow, or on any error.
+# CHAIRSIDE_AA=1 / 0 forces it on / off (testing).
+# ---------------------------------------------------------------------------
+
+_AA_SS = 4                 # supersampling factor
+_AA_STATE: dict = {"ok": None}
+_AA_CACHE: "OrderedDict[tuple, tk.PhotoImage]" = OrderedDict()
+_AA_CACHE_MAX = 600
+
+
+def _aa_enabled() -> bool:
+    ok = _AA_STATE["ok"]
+    if ok is None:
+        force = os.environ.get("CHAIRSIDE_AA", "").strip()
+        ok = sys.platform.startswith("win") if force == "" else force == "1"
+        if ok:
+            try:
+                from PIL import Image as _I, ImageDraw as _D  # noqa: F401
+                _AA_STATE["Image"], _AA_STATE["ImageDraw"] = _I, _D
+            except Exception:
+                ok = False
+        _AA_STATE["ok"] = ok
+    return ok
+
+
+def _hex_rgb(c: str) -> tuple[int, int, int]:
+    return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+
+
+def _aa_photo(cv: tk.Canvas, key: tuple, render) -> tk.PhotoImage:
+    img = _AA_CACHE.get(key)
+    if img is not None:
+        _AA_CACHE.move_to_end(key)
+        return img
+    pil = render()
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG")
+    img = tk.PhotoImage(master=cv, data=base64.b64encode(buf.getvalue()).decode("ascii"),
+                        format="png")
+    _AA_CACHE[key] = img
+    while len(_AA_CACHE) > _AA_CACHE_MAX:
+        _AA_CACHE.popitem(last=False)
+    return img
+
+
+def _aa_place(cv: tk.Canvas, x: float, y: float, img: tk.PhotoImage, tags) -> int:
+    item = cv.create_image(x, y, image=img, anchor="nw", tags=tags or ())
+    # The canvas keeps the images it shows alive (the cache may evict them).
+    refs = cv.__dict__.setdefault("_aa_refs", {})
+    refs[item] = img
+    if len(refs) > 400:
+        alive = set(cv.find_all())
+        for k in [k for k in refs if k not in alive]:
+            del refs[k]
+    return item
+
+
+def _aa_disc(d: int, fill: str, outline: str, lw: float):
+    """PIL RGBA image of a d x d circle (fill and/or outline ring)."""
+    Image, ImageDraw = _AA_STATE["Image"], _AA_STATE["ImageDraw"]
+    S = _AA_SS
+    big = Image.new("RGBA", (d * S, d * S), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(big)
+    w = max(1, int(round(lw * S))) if outline else 0
+    dr.ellipse((0, 0, d * S - 1, d * S - 1),
+               fill=(*_hex_rgb(fill), 255) if fill else None,
+               outline=(*_hex_rgb(outline), 255) if outline else None, width=w)
+    return big.resize((d, d), Image.LANCZOS)
+
+
+def _aa_oval_ok(x0, y0, x1, y1, kw) -> bool:
+    return (_aa_enabled() and abs((x1 - x0) - (y1 - y0)) < 1.5 and x1 - x0 >= 2
+            and not kw.get("stipple") and not kw.get("dash"))
+
+
+def _oval(cv: tk.Canvas, x0, y0, x1, y1, **kw):
+    """create_oval, smooth on Windows (circles only)."""
+    if _aa_oval_ok(x0, y0, x1, y1, kw):
+        try:
+            fill = kw.get("fill", "") or ""
+            outline = kw.get("outline", "") or ""
+            lw = float(kw.get("width", 1) or 1)
+            d = int(round(x1 - x0))
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            img = _aa_photo(cv, ("disc", d, fill, outline, lw),
+                            lambda: _aa_disc(d, fill, outline, lw))
+            return _aa_place(cv, round(cx - d / 2), round(cy - d / 2), img, kw.get("tags"))
+        except Exception:
+            pass
+    return cv.create_oval(x0, y0, x1, y1, **kw)
+
+
+def _polygon(cv: tk.Canvas, pts, **kw):
+    """Straight-edged create_polygon, smooth on Windows (small shapes such
+    as the play triangle and the logo's speech tail)."""
+    if _aa_enabled() and not kw.get("smooth"):
+        try:
+            xs, ys = pts[0::2], pts[1::2]
+            ox, oy = math.floor(min(xs)) - 1, math.floor(min(ys)) - 1
+            w, h = math.ceil(max(xs)) - ox + 2, math.ceil(max(ys)) - oy + 2
+            fill = kw.get("fill", "")
+            rel = tuple(round((v - (ox if i % 2 == 0 else oy)) * 4) / 4 for i, v in enumerate(pts))
+
+            def render():
+                Image, ImageDraw = _AA_STATE["Image"], _AA_STATE["ImageDraw"]
+                S = _AA_SS
+                big = Image.new("RGBA", (w * S, h * S), (0, 0, 0, 0))
+                ImageDraw.Draw(big).polygon([v * S for v in rel], fill=(*_hex_rgb(fill), 255))
+                return big.resize((w, h), Image.LANCZOS)
+
+            img = _aa_photo(cv, ("poly", w, h, rel, fill), render)
+            return _aa_place(cv, ox, oy, img, kw.get("tags"))
+        except Exception:
+            pass
+    return cv.create_polygon(pts, **kw)
+
+
+def _aa_rrect(cv: tk.Canvas, x0, y0, x1, y1, r, fill: str, outline: str, lw: float, tags) -> None:
+    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+    r = int(round(max(0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))))
+    t = max(1, int(round(lw))) if outline else 0
+    if r < 2:
+        cv.create_rectangle(x0, y0, x1, y1, fill=fill, outline=outline,
+                            width=t if outline else 0, tags=tags or ())
+        return
+    kt = tags or ()
+    d = 2 * r
+    disc = None
+    for qx, qy, px, py in ((0, 0, x0, y0), (r, 0, x1 - r, y0), (0, r, x0, y1 - r), (r, r, x1 - r, y1 - r)):
+        def render(qx=qx, qy=qy):
+            nonlocal disc
+            if disc is None:
+                disc = _aa_disc(d, fill, outline, lw)
+            return disc.crop((qx, qy, qx + r, qy + r))
+        img = _aa_photo(cv, ("q", d, fill, outline, lw, qx, qy), render)
+        _aa_place(cv, px, py, img, kt)
+    if fill:
+        cv.create_rectangle(x0 + r, y0, x1 - r, y1, fill=fill, outline="", width=0, tags=kt)
+        if y1 - y0 > d:
+            cv.create_rectangle(x0, y0 + r, x0 + r, y1 - r, fill=fill, outline="", width=0, tags=kt)
+            cv.create_rectangle(x1 - r, y0 + r, x1, y1 - r, fill=fill, outline="", width=0, tags=kt)
+    if outline:
+        for ax0, ay0, ax1, ay1 in ((x0 + r, y0, x1 - r, y0 + t), (x0 + r, y1 - t, x1 - r, y1),
+                                   (x0, y0 + r, x0 + t, y1 - r), (x1 - t, y0 + r, x1, y1 - r)):
+            if ax1 > ax0 and ay1 > ay0:
+                cv.create_rectangle(ax0, ay0, ax1, ay1, fill=outline, outline="", width=0, tags=kt)
+
+
 def _rrect(cv: tk.Canvas, x0, y0, x1, y1, r, **kw):
+    if _aa_enabled() and not kw.get("stipple") and not kw.get("dash"):
+        try:
+            return _aa_rrect(cv, x0, y0, x1, y1, r, kw.get("fill", "") or "",
+                             kw.get("outline", "") or "", float(kw.get("width", 1) or 1),
+                             kw.get("tags"))
+        except Exception:
+            pass
     r = max(0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
            x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
@@ -1813,6 +1980,12 @@ def _gradient_rrect(cv: tk.Canvas, x0, y0, x1, y1, r, c1: str, c2: str) -> None:
     are filled with 1px lines clipped to the corner arcs; the straight
     middle uses a bounded number of bands so wide buttons stay cheap to
     redraw during hover / press animations."""
+    if _aa_enabled():
+        try:
+            _aa_gradient_rrect(cv, x0, y0, x1, y1, r, c1, c2)
+            return
+        except Exception:
+            pass
     _rrect(cv, x0, y0, x1, y1, r, fill=_mix(c1, c2, 0.5), outline="")
     if c1 == c2:
         _rrect(cv, x0, y0, x1, y1, r, fill=c1, outline="")
@@ -1843,6 +2016,50 @@ def _gradient_rrect(cv: tk.Canvas, x0, y0, x1, y1, r, c1: str, c2: str) -> None:
         inset = r - math.sqrt(max(0.0, r * r - d * d))
         cv.create_line(x, y0 + inset + 1, x, y1 - inset - 1, fill=col(x))
         x += 1
+
+
+def _aa_gradient_rrect(cv: tk.Canvas, x0, y0, x1, y1, r, c1: str, c2: str) -> None:
+    """Smooth version of _gradient_rrect: two rounded end-cap images with
+    the gradient baked in, and vertical bands for the straight middle."""
+    x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
+    w, h = x1 - x0, y1 - y0
+    if w < 3 or h < 2:
+        return
+    r = int(round(max(1, min(r, w / 2, h / 2))))
+
+    def col(x):
+        return _mix(c1, c2, (x - x0) / w)
+
+    for side in ("l", "r"):
+        cx0 = x0 if side == "l" else x1 - r
+        ca, cb = col(cx0), col(cx0 + r)
+
+        def render(side=side, ca=ca, cb=cb):
+            Image, ImageDraw = _AA_STATE["Image"], _AA_STATE["ImageDraw"]
+            S = _AA_SS
+            mask = Image.new("L", (2 * r * S, h * S), 0)
+            ImageDraw.Draw(mask).rounded_rectangle((0, 0, 2 * r * S - 1, h * S - 1),
+                                                   radius=r * S, fill=255)
+            mask = mask.resize((2 * r, h), Image.LANCZOS)
+            mask = mask.crop((0, 0, r, h) if side == "l" else (r, 0, 2 * r, h))
+            ramp = Image.new("RGB", (r, 1))
+            for i in range(r):
+                ramp.putpixel((i, 0), _hex_rgb(_mix(ca, cb, (i + 0.5) / r)))
+            img = ramp.resize((r, h), Image.NEAREST)
+            img.putalpha(mask)
+            return img
+
+        img = _aa_photo(cv, ("gcap", side, r, h, ca, cb), render)
+        _aa_place(cv, cx0, y0, img, None)
+    mid_l, mid_r = x0 + r, x1 - r
+    if mid_r <= mid_l:
+        return
+    bands = max(1, min(96, int((mid_r - mid_l) / 3)))
+    bw = (mid_r - mid_l) / bands
+    for i in range(bands):
+        bx0 = mid_l + i * bw
+        cv.create_rectangle(int(bx0), y0, int(bx0 + bw + 1), y1,
+                            fill=col(bx0 + bw / 2), outline="", width=0)
 
 
 def _draw_check(cv: tk.Canvas, cx, cy, size, color: str, width: float = 2.0) -> None:
@@ -2119,10 +2336,10 @@ class ReadyLog(tk.Canvas):
             ax, ay, ar = _px(34), (y0 + y1) / 2, _px(19)
             if k < 1:
                 pr = ar + _px(4) + _px(16) * k
-                self.create_oval(ax - pr, ay - pr, ax + pr, ay + pr,
+                _oval(self, ax - pr, ay - pr, ax + pr, ay + pr,
                                  outline=_mix(th["accent"], bgc, k), width=2.5 * _DPI_ZOOM)
             # Avatar follows the theme accent (not a per-station color).
-            self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=th["accent"], outline="")
+            _oval(self, ax - ar, ay - ar, ax + ar, ay + ar, fill=th["accent"], outline="")
             self.create_text(ax, ay, text=_initials(name), fill=th["accent_text"],
                              font=self._font(11, "bold"))
             pill_f = self._font(9, "bold")
@@ -2383,7 +2600,7 @@ class StationChip(tk.Canvas):
                    width=1.2 * _DPI_ZOOM)
             fg = th["text"]
             d = _px(3.5)
-            self.create_oval(_px(14) - d, h / 2 - d, _px(14) + d, h / 2 + d, fill=th["status"],
+            _oval(self, _px(14) - d, h / 2 - d, _px(14) + d, h / 2 + d, fill=th["status"],
                              outline="")
         self.create_text(_px(25), h / 2, text=self.text, anchor="w", fill=fg, font=self._f)
 
@@ -2433,9 +2650,9 @@ class VolumeSlider(tk.Canvas):
         if xv > x0 + 2:
             _gradient_rrect(self, x0, y - tr, xv, y + tr, tr, th["accent"], th.get("accent2", th["accent"]))
         kr = _px(9)
-        self.create_oval(xv - kr - 1, y - kr + 2, xv + kr + 1, y + kr + 3,
+        _oval(self, xv - kr - 1, y - kr + 2, xv + kr + 1, y + kr + 3,
                          fill=_mix(th["card_bg"], "#000000", 0.12), outline="")
-        self.create_oval(xv - kr, y - kr, xv + kr, y + kr, fill="#ffffff",
+        _oval(self, xv - kr, y - kr, xv + kr, y + kr, fill="#ffffff",
                          outline=_mix(th["accent"], "#ffffff", 0.3), width=2 * _DPI_ZOOM)
         self.create_text(self.winfo_width() - 2, y, text="%d%%" % v, anchor="e", fill=th["sub"],
                          font=self._f)
@@ -2476,11 +2693,11 @@ class IconButton(tk.Canvas):
             _gradient_rrect(self, 1, 1, s - 1, s - 1, s / 2 - 1, th["accent"], th.get("accent2", th["accent"]))
             fg = th["accent_text"]
         else:
-            self.create_oval(1, 1, s - 1, s - 1, fill=_mix(th["card_bg"], th["accent"], 0.12), outline="")
+            _oval(self, 1, 1, s - 1, s - 1, fill=_mix(th["card_bg"], th["accent"], 0.12), outline="")
             fg = th["accent"]
         c, k = s / 2, s * 0.17
-        self.create_polygon(c - k * 0.8, c - k, c - k * 0.8, c + k, c + k * 1.1, c,
-                            fill=fg, outline=fg, joinstyle="round")
+        _polygon(self, (c - k * 0.8, c - k, c - k * 0.8, c + k, c + k * 1.1, c),
+                 fill=fg, outline=fg, joinstyle="round")
 
 
 class AppLogo(tk.Canvas):
@@ -2498,8 +2715,8 @@ class AppLogo(tk.Canvas):
         s = self._size / 100.0
         a1, a2 = theme["accent"], theme.get("accent2", theme["accent"])
         _gradient_rrect(self, 10 * s, 15 * s, 90 * s, 70 * s, 15 * s, a1, a2)
-        self.create_polygon(30 * s, 69 * s, 46 * s, 69 * s, 30 * s, 86 * s,
-                            fill=_mix(a1, a2, 0.25), outline="")
+        _polygon(self, (30 * s, 69 * s, 46 * s, 69 * s, 30 * s, 86 * s),
+                 fill=_mix(a1, a2, 0.25), outline="")
         self.create_rectangle(45 * s, 30 * s, 55 * s, 55 * s, fill="#ffffff", outline="")
         self.create_rectangle(37.5 * s, 37.5 * s, 62.5 * s, 47.5 * s, fill="#ffffff", outline="")
 
@@ -2562,14 +2779,14 @@ class StatusPill(tk.Canvas):
             dot = th["status"]
             p = (time.monotonic() % 1.8) / 1.8
             pr = _px(4) + _px(7) * p
-            self.create_oval(cx - pr, cy - pr, cx + pr, cy + pr,
+            _oval(self, cx - pr, cy - pr, cx + pr, cy + pr,
                              fill=_mix(dot, th["card_bg"], 0.55 + 0.45 * p), outline="")
         elif self._state == "waiting":
             dot = "#f59e0b"
         else:
             dot = "#9ca3af"
         d = _px(4)
-        self.create_oval(cx - d, cy - d, cx + d, cy + d, fill=dot, outline="")
+        _oval(self, cx - d, cy - d, cx + d, cy + d, fill=dot, outline="")
         self.create_text(_px(32), cy, text=self._text, anchor="w", fill=th["text"], font=self._f)
 
 
@@ -2633,10 +2850,7 @@ class RoundedButton(tk.Canvas):
         self.delete("all")
         w, h = int(self["width"]), int(self["height"])
         r = min(self._r, w // 2, h // 2)
-        pts = [r, 0,   w-r, 0,   w, 0,   w, r,
-               w, h-r, w,   h,   w-r, h, r, h,
-               0, h,   0,   h-r, 0,   r, 0, 0]
-        self.create_polygon(pts, smooth=True, fill=bg, outline="")
+        _rrect(self, 0, 0, w, h, r, fill=bg, outline="")
         self.create_text(w // 2, h // 2, text=self._text,
                          fill=self._fg, font=self._fn)
 

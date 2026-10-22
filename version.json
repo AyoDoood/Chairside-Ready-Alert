@@ -1,7 +1,7 @@
 {
-  "version": "1.0.90",
+  "version": "1.0.91",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Sharper, richer look on Windows.\n\n- Text and edges are now crisp on Windows PCs with display scaling set to 125% or 150%, instead of looking soft and stretched. The window stays the same size on screen.\n- The blue (or theme) color between the panels is deeper on Windows, and the panel shadows are stronger, so the panels stand out like on the Mac.\n- Windows text is about 15% smaller to match the Mac look (from 1.0.89).",
+  "release_notes": "Smoother look on Windows.\n\n- Rounded corners, circles and shadows are now smooth on Windows instead of jagged: the panels, the Ready button, the Send to chips, the avatar circle, online dots, the volume slider and buttons.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
