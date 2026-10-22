@@ -1,7 +1,7 @@
 {
-  "version": "1.0.89",
+  "version": "1.0.90",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Smaller text on Windows.\n\n- On Windows, all text and controls are about 15% smaller, so the app matches the Mac look and the window takes up less of the screen.\n- Everything still fits: the Ready button, at least four Ready messages, Sound and Volume, and Send to.",
+  "release_notes": "Sharper, richer look on Windows.\n\n- Text and edges are now crisp on Windows PCs with display scaling set to 125% or 150%, instead of looking soft and stretched. The window stays the same size on screen.\n- The blue (or theme) color between the panels is deeper on Windows, and the panel shadows are stronger, so the panels stand out like on the Mac.\n- Windows text is about 15% smaller to match the Mac look (from 1.0.89).",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",

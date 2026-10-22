@@ -1216,6 +1216,7 @@ class AnimationPlayer:
         self._button: dict = {}
         self._after_id: Optional[str] = None
         self._running = False
+        self._zoom = 1.0
 
     @property
     def running(self) -> bool:
@@ -1240,6 +1241,12 @@ class AnimationPlayer:
         self.stop()  # cancel any in-flight animation
         self._anim_id = anim_id
         self._button = dict(button)
+        self._zoom = UI_ZOOM
+        if self._zoom != 1.0:
+            # Draw in 96-dpi units; _tick scales the finished frame up.
+            for k in ("x", "y", "w", "h", "radius"):
+                if isinstance(self._button.get(k), (int, float)):
+                    self._button[k] = self._button[k] / self._zoom
         self._button["_seed"] = random.randint(0, 10**9)
         self._start_time = time.monotonic()
         self._frame_ms = self.FRAME_MS if OPTIONS.get("fps60", True) else 33
@@ -1270,8 +1277,9 @@ class AnimationPlayer:
         now = time.monotonic()
         try:
             canvas.delete("all")
-            w = canvas.winfo_width()
-            h = canvas.winfo_height()
+            z = self._zoom
+            w = canvas.winfo_width() / z
+            h = canvas.winfo_height() / z
             FX.begin_frame(now)
             # Animation draws the figure. The button-mask used to be drawn
             # here unconditionally to clip the figure where it overlapped
@@ -1285,6 +1293,8 @@ class AnimationPlayer:
             if t < 1.0:
                 anim["draw_fn"](canvas, t, w, h, self._button)
             FX.draw(canvas)
+            if z != 1.0:
+                _zoom_frame(canvas, z)
         except tk.TclError:
             self.stop()
             return
@@ -1312,6 +1322,22 @@ class AnimationPlayer:
             self._after_id = self.root.after(self._frame_ms, self._tick)
         except tk.TclError:
             self.stop()
+
+
+def _zoom_frame(canvas: tk.Canvas, z: float) -> None:
+    """Scale everything drawn this frame by z, including stroke widths
+    (canvas.scale moves coordinates only). Text keeps its size: fonts are
+    in points, which Tk already scales for the display's DPI."""
+    canvas.scale("all", 0, 0, z, z)
+    for item in canvas.find_all():
+        if canvas.type(item) in ("text", "image", "window"):
+            continue
+        try:
+            wd = float(canvas.itemcget(item, "width") or 0)
+        except (tk.TclError, ValueError):
+            continue
+        if wd > 0:
+            canvas.itemconfigure(item, width=wd * z)
 
 
 def play_animation(
@@ -3041,6 +3067,17 @@ def draw_anim_skateboard(canvas, t, w, h, button):
         _walk(canvas, (spot2[0] - travel * 6, spot2[1]), edge, l); return
     if (l := _phase(t, 0.95, 1.00)) is not None:
         _hide_back(canvas, button, l, side); return
+
+
+# Physical pixels per drawing unit. The Windows app is DPI-aware (crisp at
+# 125%/150% display scaling), so Tk draws in real pixels; animations are
+# authored in 96-dpi units and are scaled up by this after each frame.
+UI_ZOOM = 1.0
+
+
+def set_ui_zoom(zoom: float) -> None:
+    global UI_ZOOM
+    UI_ZOOM = max(1.0, min(3.0, float(zoom)))
 
 
 def set_palette(ink: str, accent: str, page: str, dark: bool = False) -> None:

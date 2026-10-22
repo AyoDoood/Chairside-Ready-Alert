@@ -122,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.89"
+APP_VERSION = "1.0.90"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1683,6 +1683,33 @@ class MessageClient:
 # ---------------------------------------------------------------------------
 
 _UI_SCALE = 1.0
+# Windows only: physical pixels per 96-dpi pixel (1.25 at 125% display
+# scaling, 1.5 at 150%). The process is DPI-aware (see
+# _enable_windows_dpi_awareness), so Tk draws in real pixels and text is
+# crisp instead of bitmap-stretched; plain pixel numbers (padding,
+# dialog sizes, line widths) go through _dz() so they keep their size.
+# _px() sizes already include it via `tk scaling`. Always 1.0 on macOS.
+_DPI_ZOOM = 1.0
+
+
+def _enable_windows_dpi_awareness() -> None:
+    """Call BEFORE the first tk.Tk(). System-DPI-aware (not per-monitor:
+    Tk 8.6 doesn't handle WM_DPICHANGED), so Windows stops bitmap-
+    stretching the window -- the blur on 125%/150% displays."""
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_SYSTEM_DPI_AWARE
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def _dz(n: float) -> int:
+    return int(round(n * _DPI_ZOOM))
 
 # Windows only: shrink every font (and the _px() geometry that follows it)
 # by this factor. At Tk's default 96-dpi scaling the Windows UI read too
@@ -1698,12 +1725,39 @@ def _init_ui_scale(root: tk.Misc) -> None:
     except Exception:
         s = 1.0
     if sys.platform.startswith("win"):
+        global _DPI_ZOOM
+        # tk scaling is pixels per point: 96 dpi -> 1.333.
+        _DPI_ZOOM = max(1.0, min(3.0, s * 72.0 / 96.0))
+        try:
+            _ready_animations.set_ui_zoom(_DPI_ZOOM)
+        except Exception:
+            pass
         try:
             s *= WINDOWS_TEXT_SCALE
             root.tk.call("tk", "scaling", s)
         except Exception:
             pass
     _UI_SCALE = max(1.0, min(3.0, s))
+
+
+# Windows only: the light themes' page color (the tint between the cards)
+# reads much paler on typical Windows monitors than on a Mac display, so
+# deepen it toward the accent there and give the card shadows more weight
+# (user request, 1.0.90).
+WINDOWS_PAGE_TINT = 0.10      # blend of the accent into the page color
+WINDOWS_SHADOW_BOOST = 1.6    # multiplier on RoundedCard shadow strength
+_WINDOWS_THEME_TWEAKED = False
+
+
+def _apply_windows_theme_tweaks() -> None:
+    global _WINDOWS_THEME_TWEAKED
+    if _WINDOWS_THEME_TWEAKED or not sys.platform.startswith("win"):
+        return
+    _WINDOWS_THEME_TWEAKED = True
+    for th in THEMES.values():
+        if _is_dark(th["bg"]):
+            continue
+        th["bg"] = _mix(_mix(th["bg"], th["accent"], WINDOWS_PAGE_TINT), th["title"], 0.03)
 
 
 def _usable_screen_size(root: tk.Misc) -> tuple[int, int]:
@@ -1718,7 +1772,7 @@ def _usable_screen_size(root: tk.Misc) -> tuple[int, int]:
             rect = wintypes.RECT()
             # SPI_GETWORKAREA; coordinates match Tk's for a non-DPI-aware process.
             if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
-                w, h = rect.right - rect.left, rect.bottom - rect.top - 40
+                w, h = rect.right - rect.left, rect.bottom - rect.top - _dz(40)
         except Exception:
             pass
     return w, h
@@ -1869,6 +1923,8 @@ class RoundedCard(tk.Frame):
         dark = _is_dark(self._outer_bg)
         shadow = "#000000" if dark else "#0f172a"
         k = 2.2 if dark else 1.0
+        if sys.platform.startswith("win"):
+            k *= WINDOWS_SHADOW_BOOST
         for grow, a, dy in ((_px(6), 0.025, _px(4)), (_px(4), 0.04, _px(3)),
                             (_px(2), 0.06, _px(2)), (1, 0.08, 1)):
             _rrect(self._cv, x0 - grow, y0 - grow + dy, x1 + grow, y1 + grow + dy,
@@ -2064,7 +2120,7 @@ class ReadyLog(tk.Canvas):
             if k < 1:
                 pr = ar + _px(4) + _px(16) * k
                 self.create_oval(ax - pr, ay - pr, ax + pr, ay + pr,
-                                 outline=_mix(th["accent"], bgc, k), width=2.5)
+                                 outline=_mix(th["accent"], bgc, k), width=2.5 * _DPI_ZOOM)
             # Avatar follows the theme accent (not a per-station color).
             self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=th["accent"], outline="")
             self.create_text(ax, ay, text=_initials(name), fill=th["accent_text"],
@@ -2124,9 +2180,9 @@ class ReadyLog(tk.Canvas):
                 if kind == "out":
                     # Drawn arrow (not a glyph) so it looks the same everywhere.
                     x1, x0, hk = tx - _px(8), tx - _px(24), _px(5)
-                    self.create_line(x0, cy, x1, cy, fill=sub, width=1.8, capstyle="round")
+                    self.create_line(x0, cy, x1, cy, fill=sub, width=1.8 * _DPI_ZOOM, capstyle="round")
                     self.create_line(x1 - hk, cy - hk, x1, cy, x1 - hk, cy + hk, fill=sub,
-                                     width=1.8, capstyle="round", joinstyle="round")
+                                     width=1.8 * _DPI_ZOOM, capstyle="round", joinstyle="round")
                 f = self._font(10)
                 label = ("Sent to " + text) if kind == "out" else text
                 shown = _elide(f, label, right - ts_w - gap - tx)
@@ -2258,7 +2314,7 @@ class ReadyButton(tk.Canvas):
                 if 0 <= kk <= 1:
                     g = 3 + _px(12) * (1 - (1 - kk) ** 3)
                     _rrect(self, x0 - g, y0 - g, x1 + g, y1 + g, self._r + g,
-                           fill="", outline=_mix(c1, card, kk), width=2)
+                           fill="", outline=_mix(c1, card, kk), width=2 * _DPI_ZOOM)
         _gradient_rrect(self, x0, y0, x1, y1, self._r, c1, c2)
         self.create_line(x0 + self._r, y0 + 2, x1 - self._r, y0 + 2, fill=_mix(c1, "#ffffff", 0.35))
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -2320,11 +2376,11 @@ class StationChip(tk.Canvas):
         if sel:
             _gradient_rrect(self, 1, 2, w - 2, h - 3, r, th["accent"], th.get("accent2", th["accent"]))
             fg = th["accent_text"]
-            _draw_check(self, _px(14), h / 2, _px(8), fg, width=2)
+            _draw_check(self, _px(14), h / 2, _px(8), fg, width=2 * _DPI_ZOOM)
         else:
             _rrect(self, 1, 2, w - 2, h - 3, r, fill=th.get("chip_bg", th["input_bg"]),
                    outline=th["accent"] if self._hover else th.get("card_border", "#e2e8f0"),
-                   width=1.2)
+                   width=1.2 * _DPI_ZOOM)
             fg = th["text"]
             d = _px(3.5)
             self.create_oval(_px(14) - d, h / 2 - d, _px(14) + d, h / 2 + d, fill=th["status"],
@@ -2380,7 +2436,7 @@ class VolumeSlider(tk.Canvas):
         self.create_oval(xv - kr - 1, y - kr + 2, xv + kr + 1, y + kr + 3,
                          fill=_mix(th["card_bg"], "#000000", 0.12), outline="")
         self.create_oval(xv - kr, y - kr, xv + kr, y + kr, fill="#ffffff",
-                         outline=_mix(th["accent"], "#ffffff", 0.3), width=2)
+                         outline=_mix(th["accent"], "#ffffff", 0.3), width=2 * _DPI_ZOOM)
         self.create_text(self.winfo_width() - 2, y, text="%d%%" % v, anchor="e", fill=th["sub"],
                          font=self._f)
 
@@ -2533,8 +2589,8 @@ class RoundedButton(tk.Canvas):
         )
         tw = self._fn.measure(text)
         th = self._fn.metrics("linespace")
-        bw = width if width > 0 else tw + padx * 2
-        bh = th + pady * 2
+        bw = width if width > 0 else tw + _dz(padx) * 2
+        bh = th + _dz(pady) * 2
         try:
             outer = parent.cget("bg")
         except Exception:
@@ -2546,7 +2602,7 @@ class RoundedButton(tk.Canvas):
         self._command = command
         self._bg = bg
         self._fg = fg
-        self._r = radius
+        self._r = _dz(radius)
         self._hover = self._shade(bg, -22)
         self._press = self._shade(bg, -50)
 
@@ -2605,11 +2661,12 @@ class ChairsideReadyAlertApp:
         self.root = root
         _init_ui_family(root)
         _init_ui_scale(root)
+        _apply_windows_theme_tweaks()
         self.root.title(APP_TITLE)
         # Fit the usable screen: Tk on Windows isn't DPI-aware, so at 125-150%
         # display scaling a fixed 760-tall window overflows a 1080p screen.
         _, avail_h = _usable_screen_size(self.root)
-        self.root.geometry(f"820x{max(480, min(620, avail_h))}")  # refined by _fit_window_to_content
+        self.root.geometry(f"{_dz(820)}x{max(_dz(480), min(_dz(620), avail_h))}")  # refined by _fit_window_to_content
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
@@ -3415,14 +3472,14 @@ class ChairsideReadyAlertApp:
         style.configure("Title.TLabel",  background=t["bg"],      foreground=t["title"], font=_ttk_font(13, "bold"))
         style.configure("CardTitle.TLabel", background=t["card_bg"], foreground=t["text"], font=_ttk_font(10, "bold"))
         style.configure("Subtitle.TLabel",  background=t["bg"],   foreground=t["sub"],  font=_ttk_font(10))
-        style.configure("TButton",       font=_ttk_font(10, "bold"), padding=8)
+        style.configure("TButton",       font=_ttk_font(10, "bold"), padding=_dz(8))
         style.configure("Primary.TButton",  background=t["accent"], foreground=t["accent_text"])
         style.map("Primary.TButton",        background=[("active", t["accent"]), ("pressed", t["accent"])])
         style.configure("Ready.TButton",    background=t["accent"], foreground=t["accent_text"],
-                        font=_ttk_font(15, "bold"), padding=(60, 18))
+                        font=_ttk_font(15, "bold"), padding=(_dz(60), _dz(18)))
         style.map("Ready.TButton",          background=[("active", t["accent"]), ("pressed", t["accent"])])
         style.configure("Preview.TButton",  background=t["accent"], foreground=t["accent_text"],
-                        font=_ttk_font(10), padding=(4, 1))
+                        font=_ttk_font(10), padding=(_dz(4), _dz(1)))
         style.map("Preview.TButton",        background=[("active", t["accent"])])
 
     def _build_menu(self) -> None:
@@ -3756,7 +3813,7 @@ class ChairsideReadyAlertApp:
                 pass
         self._trial_banner_frame = tk.Frame(parent, bg=bg_color)
         self._trial_banner_inner = tk.Frame(self._trial_banner_frame, bg=bg_color)
-        self._trial_banner_inner.pack(fill="x", padx=4, pady=4)
+        self._trial_banner_inner.pack(fill="x", padx=_dz(4), pady=_dz(4))
         self._trial_banner_text_var = tk.StringVar(value="")
         self._trial_banner_label = tk.Label(
             self._trial_banner_inner,
@@ -3766,23 +3823,23 @@ class ChairsideReadyAlertApp:
             font=_ui_font(10, "bold"),
             anchor="w",
             justify="left",
-            wraplength=720,
+            wraplength=_dz(720),
         )
-        self._trial_banner_label.pack(side="left", fill="x", expand=True, padx=(8, 8))
+        self._trial_banner_label.pack(side="left", fill="x", expand=True, padx=(_dz(8), _dz(8)))
         self._trial_banner_buy_btn = tk.Button(
             self._trial_banner_inner,
             text="Buy in Microsoft Store",
             command=self._open_buy_store_listing,
             font=_ui_font(10, "bold"),
         )
-        self._trial_banner_buy_btn.pack(side="right", padx=(4, 8))
+        self._trial_banner_buy_btn.pack(side="right", padx=(_dz(4), _dz(8)))
         self._trial_banner_refresh_btn = tk.Button(
             self._trial_banner_inner,
             text=REFRESH_BTN_LABEL,
             command=self._on_refresh_button_click,
             font=_ui_font(10),
         )
-        self._trial_banner_refresh_btn.pack(side="right", padx=(4, 4))
+        self._trial_banner_refresh_btn.pack(side="right", padx=(_dz(4), _dz(4)))
 
     def _set_trial_banner(self, visible: bool, text: str = "", expired: bool = False) -> None:
         frame = getattr(self, "_trial_banner_frame", None)
@@ -3816,10 +3873,10 @@ class ChairsideReadyAlertApp:
             # fill=both, expand=True earlier; banner uses fill=x. The pack order
             # in _build_ui placed the banner immediately before top_row, so a
             # plain pack(fill=x) here keeps it on top.
-            frame.pack(fill="x", pady=(0, 8), before=self._top_row_frame)
+            frame.pack(fill="x", pady=(0, _dz(8)), before=self._top_row_frame)
         except Exception:
             try:
-                frame.pack(fill="x", pady=(0, 8))
+                frame.pack(fill="x", pady=(0, _dz(8)))
             except Exception:
                 pass
 
@@ -4576,22 +4633,22 @@ class ChairsideReadyAlertApp:
         win.protocol("WM_DELETE_WINDOW", _on_close)
 
         # Top: text entry + Add button.
-        add_frame = ttk.Frame(win, padding=(12, 12, 12, 6))
+        add_frame = ttk.Frame(win, padding=(_dz(12), _dz(12), _dz(12), _dz(6)))
         add_frame.pack(fill="x")
         ttk.Label(add_frame, text="Computer name:").grid(row=0, column=0, columnspan=2, sticky="w")
         entry_var = tk.StringVar()
         entry = ttk.Entry(add_frame, textvariable=entry_var, width=28)
-        entry.grid(row=1, column=0, sticky="we", pady=(4, 0))
+        entry.grid(row=1, column=0, sticky="we", pady=(_dz(4), 0))
         add_btn = ttk.Button(add_frame, text="Add", state="disabled")
-        add_btn.grid(row=1, column=1, sticky="e", padx=(8, 0), pady=(4, 0))
+        add_btn.grid(row=1, column=1, sticky="e", padx=(_dz(8), 0), pady=(_dz(4), 0))
         add_frame.columnconfigure(0, weight=1)
 
         # Middle: listbox of computers.
-        list_frame = ttk.Frame(win, padding=(12, 6, 12, 6))
+        list_frame = ttk.Frame(win, padding=(_dz(12), _dz(6), _dz(12), _dz(6)))
         list_frame.pack(fill="both", expand=True)
         ttk.Label(list_frame, text="Computers:").pack(anchor="w")
         list_inner = ttk.Frame(list_frame)
-        list_inner.pack(fill="both", expand=True, pady=(4, 0))
+        list_inner.pack(fill="both", expand=True, pady=(_dz(4), 0))
         listbox = tk.Listbox(list_inner, selectmode="single", height=10, exportselection=False,
                              activestyle="dotbox")
         listbox.pack(side="left", fill="both", expand=True)
@@ -4602,7 +4659,7 @@ class ChairsideReadyAlertApp:
             listbox.insert("end", label)
 
         # Bottom: Remove on the left, Close on the right.
-        bottom = ttk.Frame(win, padding=(12, 6, 12, 12))
+        bottom = ttk.Frame(win, padding=(_dz(12), _dz(6), _dz(12), _dz(12)))
         bottom.pack(fill="x")
         remove_btn = ttk.Button(bottom, text="Remove", state="disabled")
         remove_btn.pack(side="left")
@@ -4833,19 +4890,19 @@ class ChairsideReadyAlertApp:
         cbg, abg = t["card_bg"], t["bg"]
         cborder = t.get("card_border")
 
-        main = tk.Frame(self.root, bg=abg, padx=10, pady=8)
+        main = tk.Frame(self.root, bg=abg, padx=_dz(10), pady=_dz(8))
         main.pack(fill="both", expand=True)
 
         # Header, one line: logo + app name on the left; "This station: X
         # Edit" and the live status pill ("3 stations online") on the right.
         header = tk.Frame(main, bg=abg)
-        header.pack(fill="x", pady=(0, 4))
+        header.pack(fill="x", pady=(0, _dz(4)))
         self._themed_widgets: list = []
         logo = AppLogo(header, t, size=30)
         logo.pack(side="left")
         self._themed_widgets.append(logo)
         title_box = tk.Frame(header, bg=abg)
-        title_box.pack(side="left", padx=(8, 0))
+        title_box.pack(side="left", padx=(_dz(8), 0))
         self._header_title = tk.Label(title_box, text=APP_TITLE, bg=abg, fg=t["title"],
                                       font=_ui_font(14, "bold"))
         self._header_title.pack(anchor="w")
@@ -4856,14 +4913,14 @@ class ChairsideReadyAlertApp:
         # staff mistook it for "who to send to" and renamed their own
         # station by accident. Edit opens a dialog instead.
         self._station_box = tk.Frame(header, bg=abg)
-        self._station_box.pack(side="right", padx=(0, 12))
+        self._station_box.pack(side="right", padx=(0, _dz(12)))
         self._header_sub_row = tk.Frame(self._station_box, bg=abg)
         self._header_sub_row.pack(anchor="e")
         self._header_sub = tk.Label(self._header_sub_row, text="", bg=abg, fg=t["sub"], font=_ui_font(10))
         self._header_sub.pack(side="left")
         self._station_edit_link = tk.Label(self._header_sub_row, text="Edit", bg=abg, fg=t["accent"],
                                            font=_ui_font(9, "underline"), cursor="hand2", bd=0, padx=0)
-        self._station_edit_link.pack(side="left", padx=(8, 0))
+        self._station_edit_link.pack(side="left", padx=(_dz(8), 0))
         self._station_edit_link.bind("<Button-1>", lambda _e: self._open_station_name_dialog())
         self.duplicate_name_var = tk.StringVar(value="")
         self.duplicate_name_label = tk.Label(self._station_box, textvariable=self.duplicate_name_var,
@@ -4882,7 +4939,7 @@ class ChairsideReadyAlertApp:
         # Build (but do not yet show) the trial banner so it is positioned
         # immediately above top_row when _apply_trial_state_to_ui packs it.
         self._build_trial_banner(main, bg_color=abg)
-        top_row.pack(fill="both", expand=True, pady=(0, 2))
+        top_row.pack(fill="both", expand=True, pady=(0, _dz(2)))
         self._top_row_frame = top_row
         # Ready button, Send to and sound cards live in a bottom stack packed
         # ahead of top_row, so on a short screen the Ready Messages log
@@ -4898,7 +4955,7 @@ class ChairsideReadyAlertApp:
         # Messages (left, expands) and the Ready button (right). The button
         # panel is packed first so it keeps its width when space is tight.
         _bp = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=10)
-        _bp.pack(side="right", fill="y", padx=(4, 0))
+        _bp.pack(side="right", fill="y", padx=(_dz(4), 0))
         _bp.fill_height = True
         self._cards.append(_bp)
         _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=10)
@@ -4922,7 +4979,7 @@ class ChairsideReadyAlertApp:
         # The inner frame has a natural height only, so the log gets its
         # height from the card: fill the card canvas vertically.
         self.log = ReadyLog(right, t)
-        self.log.pack(fill="both", expand=True, pady=(4, 0))
+        self.log.pack(fill="both", expand=True, pady=(_dz(4), 0))
 
         # Ready button panel. A spacer the height of the "READY MESSAGES"
         # title keeps the button's top level with the top of the log.
@@ -4958,7 +5015,7 @@ class ChairsideReadyAlertApp:
         st = tk.Frame(panel, bg=cbg)
         st.pack(fill="x")
         self._sound_strip = st
-        ttk.Label(st, text="SOUND", style="CardTitle.TLabel").pack(side="left", padx=(0, 8))
+        ttk.Label(st, text="SOUND", style="CardTitle.TLabel").pack(side="left", padx=(0, _dz(8)))
         self.sound_combo = ttk.Combobox(
             st, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=16
         )
@@ -4969,9 +5026,9 @@ class ChairsideReadyAlertApp:
                 self.alert_sound_var.get(), int(self.alert_volume_var.get())
             ),
         )
-        prev_btn.pack(side="left", padx=(6, 0))
+        prev_btn.pack(side="left", padx=(_dz(6), 0))
         self._themed_widgets.append(prev_btn)
-        ttk.Label(st, text="VOLUME", style="CardTitle.TLabel").pack(side="left", padx=(20, 8))
+        ttk.Label(st, text="VOLUME", style="CardTitle.TLabel").pack(side="left", padx=(_dz(20), _dz(8)))
         self._volume_scale = VolumeSlider(st, self.alert_volume_var, t, on_release=self._persist_form)
         self._volume_scale.pack(side="left", fill="x", expand=True)
         self._themed_widgets.append(self._volume_scale)
@@ -4979,10 +5036,10 @@ class ChairsideReadyAlertApp:
         # Send to: "SEND TO" sits left of the chips, and the chip area has a
         # constant height that fits two rows (_layout_target_chips).
         send_row = tk.Frame(panel, bg=cbg)
-        send_row.pack(fill="x", pady=(8, 0))
+        send_row.pack(fill="x", pady=(_dz(8), 0))
         self._send_row = send_row
         ttk.Label(send_row, text="SEND TO", style="CardTitle.TLabel").pack(side="left", anchor="center",
-                                                                         padx=(0, 12))
+                                                                         padx=(0, _dz(12)))
         self.targets_frame = tk.Frame(send_row, bg=cbg, height=self._send_to_area_height())
         self.targets_frame.pack(side="left", fill="x", expand=True)
         self.targets_frame.pack_propagate(False)
@@ -5107,31 +5164,31 @@ class ChairsideReadyAlertApp:
         t = self._current_theme
         win = tk.Toplevel(self.root)
         win.title("Network Settings")
-        win.geometry("420x260")
+        win.geometry(f"{_dz(420)}x{_dz(260)}")
         win.resizable(False, False)
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=t["bg"])
 
-        frame = tk.Frame(win, bg=t["bg"], padx=12, pady=12)
+        frame = tk.Frame(win, bg=t["bg"], padx=_dz(12), pady=_dz(12))
         frame.pack(fill="both", expand=True)
 
         tk.Label(frame, text=f"Detected LAN IP: {self.local_ip}",
-                 bg=t["bg"], fg=t["sub"], font=_ui_font(9)).pack(anchor="w", pady=(0, 10))
+                 bg=t["bg"], fg=t["sub"], font=_ui_font(9)).pack(anchor="w", pady=(0, _dz(10)))
 
         port_var = tk.StringVar(value=self.port_var.get())
         manual_var = tk.StringVar(value=str(self.config_store.data.get("manual_peer_ips", "")))
 
         tk.Label(frame, text="TCP port (same on every computer):",
-                 bg=t["bg"], fg=t["text"], font=_ui_font(9)).pack(anchor="w", pady=(0, 2))
-        ttk.Entry(frame, textvariable=port_var).pack(fill="x", pady=(0, 10))
+                 bg=t["bg"], fg=t["text"], font=_ui_font(9)).pack(anchor="w", pady=(0, _dz(2)))
+        ttk.Entry(frame, textvariable=port_var).pack(fill="x", pady=(0, _dz(10)))
         tk.Label(
             frame,
             text="Optional: extra peer IP addresses (comma-separated) if LAN discovery is blocked:",
             bg=t["bg"], fg=t["sub"], font=_ui_font(9),
-            wraplength=380, justify="left",
-        ).pack(anchor="w", pady=(0, 2))
-        ttk.Entry(frame, textvariable=manual_var).pack(fill="x", pady=(0, 8))
+            wraplength=_dz(380), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(2)))
+        ttk.Entry(frame, textvariable=manual_var).pack(fill="x", pady=(0, _dz(8)))
 
         def save_settings() -> None:
             try:
@@ -5151,11 +5208,11 @@ class ChairsideReadyAlertApp:
                 self.start_network()
 
         buttons = tk.Frame(frame, bg=t["bg"])
-        buttons.pack(fill="x", pady=(12, 0))
+        buttons.pack(fill="x", pady=(_dz(12), 0))
         RoundedButton(buttons, text="Save", command=save_settings,
                       bg=t["accent"], fg=t["accent_text"]).pack(side="right")
         RoundedButton(buttons, text="Cancel", command=win.destroy,
-                      bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, 8))
+                      bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, _dz(8)))
 
     # ------------------------------------------------------------------
     # LAN health self-check — surfaces the "Windows Firewall has disabled
@@ -5222,22 +5279,22 @@ class ChairsideReadyAlertApp:
         t = self._current_theme
         win = tk.Toplevel(self.root)
         win.title(f"{APP_TITLE} — Cannot see other workstations")
-        win.geometry("600x540")
+        win.geometry(f"{_dz(600)}x{_dz(540)}")
         win.resizable(False, False)
         win.transient(self.root)
         win.configure(bg=t["bg"])
         win.protocol("WM_DELETE_WINDOW", self._close_lan_health_help_dialog)
         self._lan_health_dialog = win
 
-        frame = tk.Frame(win, bg=t["bg"], padx=14, pady=14)
+        frame = tk.Frame(win, bg=t["bg"], padx=_dz(14), pady=_dz(14))
         frame.pack(fill="both", expand=True)
 
         tk.Label(
             frame,
             text="No other workstations have responded after 25 seconds.",
             bg=t["bg"], fg=t["text"], font=_ui_font(11, "bold"),
-            wraplength=560, justify="left",
-        ).pack(anchor="w", pady=(0, 8))
+            wraplength=_dz(560), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(8)))
 
         tk.Label(
             frame,
@@ -5249,8 +5306,8 @@ class ChairsideReadyAlertApp:
                 "this computer."
             ),
             bg=t["bg"], fg=t["sub"], font=_ui_font(10),
-            wraplength=560, justify="left",
-        ).pack(anchor="w", pady=(0, 12))
+            wraplength=_dz(560), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(12)))
 
         tk.Label(
             frame,
@@ -5259,15 +5316,15 @@ class ChairsideReadyAlertApp:
                 '"Windows PowerShell",  and choose  "Run as administrator".'
             ),
             bg=t["bg"], fg=t["text"], font=_ui_font(10),
-            wraplength=560, justify="left",
-        ).pack(anchor="w", pady=(0, 6))
+            wraplength=_dz(560), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(6)))
 
         tk.Label(
             frame,
             text="2.  Click  Copy command  below,  then paste it into PowerShell  (right-click in the window),  and press Enter:",
             bg=t["bg"], fg=t["text"], font=_ui_font(10),
-            wraplength=560, justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+            wraplength=_dz(560), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(4)))
 
         fix_cmd = (
             "Get-NetFirewallRule | Where-Object {\n"
@@ -5279,11 +5336,11 @@ class ChairsideReadyAlertApp:
 
         text_box = tk.Text(
             frame, height=6, font=_ui_font(9), wrap="none",
-            bg=t["card_bg"], fg=t["text"], relief="solid", bd=1, padx=8, pady=6,
+            bg=t["card_bg"], fg=t["text"], relief="solid", bd=1, padx=_dz(8), pady=_dz(6),
         )
         text_box.insert("1.0", fix_cmd)
         text_box.configure(state="disabled")
-        text_box.pack(fill="x", pady=(0, 10))
+        text_box.pack(fill="x", pady=(0, _dz(10)))
 
         tk.Label(
             frame,
@@ -5294,8 +5351,8 @@ class ChairsideReadyAlertApp:
                 "same fix, or it may not be running the app yet."
             ),
             bg=t["bg"], fg=t["text"], font=_ui_font(10),
-            wraplength=560, justify="left",
-        ).pack(anchor="w", pady=(0, 14))
+            wraplength=_dz(560), justify="left",
+        ).pack(anchor="w", pady=(0, _dz(14)))
 
         def copy_command() -> None:
             try:
@@ -5307,7 +5364,7 @@ class ChairsideReadyAlertApp:
                 self._append_diag(f"Could not copy to clipboard: {exc}")
 
         buttons = tk.Frame(frame, bg=t["bg"])
-        buttons.pack(fill="x", pady=(4, 0))
+        buttons.pack(fill="x", pady=(_dz(4), 0))
         RoundedButton(
             buttons, text="Close", command=self._close_lan_health_help_dialog,
             bg=t["card_bg"], fg=t["text"],
@@ -5315,7 +5372,7 @@ class ChairsideReadyAlertApp:
         RoundedButton(
             buttons, text="Copy command", command=copy_command,
             bg=t["accent"], fg=t["accent_text"],
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="right", padx=(0, _dz(8)))
 
     def _close_lan_health_help_dialog(self) -> None:
         if self._lan_health_dialog is None:
@@ -5344,11 +5401,11 @@ class ChairsideReadyAlertApp:
         except tk.TclError:
             return
         avail_w, avail_h = _usable_screen_size(self.root)
-        min_h = max(300, min(need_h, avail_h))
-        self.root.minsize(min(max(640, need_w), avail_w), min_h)
+        min_h = max(_dz(300), min(need_h, avail_h))
+        self.root.minsize(min(max(_dz(640), need_w), avail_w), min_h)
         if initial:
             h = min(need_h + _px(30), avail_h)
-            w = min(max(820, need_w), avail_w)
+            w = min(max(_dz(820), need_w), avail_w)
             self.root.geometry(f"{w}x{h}")
             self.root.after(400, lambda: self._fit_window_to_content(initial=False))
         elif cur_h < min_h:
@@ -5391,9 +5448,9 @@ class ChairsideReadyAlertApp:
         win.resizable(False, False)
         win.configure(bg=t["bg"])
         self._station_dialog = win
-        frame = tk.Frame(win, bg=t["bg"], padx=20, pady=16)
+        frame = tk.Frame(win, bg=t["bg"], padx=_dz(20), pady=_dz(16))
         frame.pack(fill="both", expand=True)
-        wrap = 420
+        wrap = _dz(420)
         if first_time:
             heading = "Welcome! Which room is this computer in?"
             body = ("Choose the name of THIS computer. Other stations will see this name "
@@ -5404,22 +5461,22 @@ class ChairsideReadyAlertApp:
         tk.Label(frame, text=heading, font=_ui_font(13, "bold"), bg=t["bg"], fg=t["title"],
                  bd=0, wraplength=wrap, justify="left").pack(anchor="w")
         tk.Label(frame, text=body, wraplength=wrap, justify="left", font=_ui_font(10),
-                 bg=t["bg"], fg=t["text"], bd=0).pack(anchor="w", pady=(6, 0))
+                 bg=t["bg"], fg=t["text"], bd=0).pack(anchor="w", pady=(_dz(6), 0))
         if not first_time:
             tk.Label(frame, wraplength=wrap, justify="left", font=_ui_font(10, "bold"), bg=t["bg"],
                      fg=warn_fg, bd=0,
                      text=("You don't need to change this to send a Ready. To alert another room, "
                            "pick it under \"Send to\" on the main screen. Only change this if you "
-                           "really want to rename this computer.")).pack(anchor="w", pady=(8, 0))
+                           "really want to rename this computer.")).pack(anchor="w", pady=(_dz(8), 0))
         pick_var = tk.StringVar(value=current)
         # Editable: pick an existing name or type a new one. This dialog is
         # the only place the name can change -- the main window has no picker.
         combo = ttk.Combobox(frame, textvariable=pick_var, values=list(self._effective_station_labels()),
                              state="normal", width=34)
-        combo.pack(fill="x", pady=(12, 0))
+        combo.pack(fill="x", pady=(_dz(12), 0))
         self.label_combo = combo
         tk.Label(frame, text="Pick a name from the list, or type a new one.", font=_ui_font(9),
-                 bg=t["bg"], fg=t["sub"], bd=0).pack(anchor="w", pady=(6, 0))
+                 bg=t["bg"], fg=t["sub"], bd=0).pack(anchor="w", pady=(_dz(6), 0))
 
         def close() -> None:
             self.label_combo = None
@@ -5463,11 +5520,11 @@ class ChairsideReadyAlertApp:
             self._commit_station_label_if_changed()
 
         buttons = tk.Frame(frame, bg=t["bg"])
-        buttons.pack(fill="x", pady=(16, 0))
+        buttons.pack(fill="x", pady=(_dz(16), 0))
         RoundedButton(buttons, text="Save", command=save,
                       bg=t["accent"], fg=t["accent_text"]).pack(side="right")
         RoundedButton(buttons, text="Cancel", command=close,
-                      bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, 8))
+                      bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, _dz(8)))
         win.protocol("WM_DELETE_WINDOW", close)
         win.bind("<Escape>", lambda _e: close())
         win.update_idletasks()
@@ -5919,15 +5976,15 @@ class ChairsideReadyAlertApp:
             return
         win = tk.Toplevel(self.root)
         win.title("Connection log")
-        win.geometry("640x320")
+        win.geometry(f"{_dz(640)}x{_dz(320)}")
         win.transient(self.root)
-        frame = ttk.Frame(win, padding=8)
+        frame = ttk.Frame(win, padding=_dz(8))
         frame.pack(fill="both", expand=True)
         ttk.Label(
             frame,
             text="Listeners, discovery, and TCP status (not shown on the main screen).",
             style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(0, 6))
+        ).pack(anchor="w", pady=(0, _dz(6)))
         text = tk.Text(frame, height=14, wrap="word", font=_ui_font(9))
         scroll = ttk.Scrollbar(frame, command=text.yview)
         text.configure(yscrollcommand=scroll.set)
@@ -6790,6 +6847,7 @@ def _show_already_running_message() -> None:
         "Use the existing app window or tray/menu-bar icon."
     )
     try:
+        _enable_windows_dpi_awareness()
         popup_root = tk.Tk()
         popup_root.withdraw()
         messagebox.showinfo(APP_TITLE, msg)
@@ -6844,6 +6902,7 @@ def main() -> None:
             _append_startup_log("Re-acquire after stale-lock cleanup failed; showing already-running message.")
             _show_already_running_message()
             return
+    _enable_windows_dpi_awareness()
     root = tk.Tk()
     try:
         _append_startup_log("Tk() created, building app")
