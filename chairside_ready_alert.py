@@ -122,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.84"
+APP_VERSION = "1.0.85"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1767,9 +1767,6 @@ def _draw_check(cv: tk.Canvas, cx, cy, size, color: str, width: float = 2.0) -> 
                    fill=color, width=width, capstyle="round", joinstyle="round")
 
 
-_AVATAR_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#ea580c", "#059669", "#0891b2", "#ca8a04"]
-
-
 def _initials(name: str) -> str:
     parts = name.split()
     if len(parts) >= 2 and parts[-1].isdigit():
@@ -1777,10 +1774,6 @@ def _initials(name: str) -> str:
     if len(parts) >= 2:
         return (parts[0][0] + parts[1][0]).upper()
     return name[:1].upper() or "?"
-
-
-def _avatar_color(name: str) -> str:
-    return _AVATAR_COLORS[sum(ord(c) * (i + 1) for i, c in enumerate(name)) % len(_AVATAR_COLORS)]
 
 
 def _elide(font: tkfont.Font, text: str, max_w: int) -> str:
@@ -1869,12 +1862,15 @@ class ReadyLog(tk.Canvas):
     """The Ready Messages log.
 
     Incoming Readys are the point of the app, so they dominate: the newest
-    sits at the very BOTTOM in a large highlighted card (colored avatar,
+    sits at the very BOTTOM in a large highlighted card (theme-colored avatar,
     "Room 3 / is ready for you", NEW badge, pulse ring on arrival); the
     second-newest is a slightly larger bold row just above it.
 
-    Outgoing confirmations ("Sent → Room 2, Doctor") are deliberately quiet
-    -- small muted text with a hollow check -- and are always inserted
+    The newest card shows how long ago it arrived ("Just now", "4 min ago")
+    rather than a clock time; older rows keep their clock time.
+
+    Outgoing confirmations ("Sent to Room 2, Doctor") are deliberately quiet
+    -- small muted text behind a small arrow -- and are always inserted
     ABOVE the two newest incoming Readys (see _insert_outgoing), so a Ready
     alert stands out both visually and by sitting lowest in the box. Same
     ordering rule the app has used since outgoing lines were introduced.
@@ -1894,11 +1890,49 @@ class ReadyLog(tk.Canvas):
         self._sent_entry: Optional[tuple] = None
         self._after_id: Optional[str] = None
         self._fonts: dict = {}
+        # Wall-clock receive time of the newest incoming Ready, for its age.
+        self._newest_recv: Optional[float] = None
         self.bind("<Configure>", lambda _e: self._draw())
+        self.after(20_000, self._age_tick)
+
+    def _age_tick(self) -> None:
+        """Redraw every 20s so the newest card's "N min ago" keeps counting."""
+        if self._after_id is None and self._newest_recv is not None:
+            self._draw()
+        try:
+            self.after(20_000, self._age_tick)
+        except tk.TclError:
+            pass
+
+    @staticmethod
+    def _ts_to_epoch(ts: str) -> Optional[float]:
+        """"10:47 AM" -> today's epoch at that time (used when replaying the
+        saved log, which only has clock times). None if unparseable."""
+        try:
+            t = datetime.strptime(ts.strip(), "%I:%M %p")
+        except ValueError:
+            return None
+        now = datetime.now()
+        when = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+        return min(when.timestamp(), time.time())
+
+    def _age_text(self, ts: str) -> str:
+        if self._newest_recv is None:
+            return ts
+        mins = int(max(0.0, time.time() - self._newest_recv) // 60)
+        if mins < 1:
+            return "Just now"
+        if mins < 60:
+            return f"{mins} min ago"
+        hrs, mins = divmod(mins, 60)
+        return f"{hrs} hr {mins} min ago" if mins else f"{hrs} hr ago"
 
     # ---- model ----
     def add_incoming(self, sender: str, ts: str, animate: bool = True) -> None:
         self.entries.append(("in", sender, ts))
+        # Live arrivals use OUR receive time (the ts comes from the sender's
+        # clock, which may be off); replayed ones only have the clock time.
+        self._newest_recv = time.time() if animate else self._ts_to_epoch(ts)
         if animate:
             self._arrive_t0 = time.monotonic()
         self._kick()
@@ -1930,6 +1964,7 @@ class ReadyLog(tk.Canvas):
 
     def clear(self) -> None:
         self.entries.clear()
+        self._newest_recv = None
         self._draw()
 
     def set_theme(self, theme: dict) -> None:
@@ -1999,28 +2034,32 @@ class ReadyLog(tk.Canvas):
             if k < 1:
                 pr = ar + _px(4) + _px(16) * k
                 self.create_oval(ax - pr, ay - pr, ax + pr, ay + pr,
-                                 outline=_mix(_avatar_color(name), bgc, k), width=2.5)
-            self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=_avatar_color(name),
-                             outline="")
-            self.create_text(ax, ay, text=_initials(name), fill="#ffffff",
+                                 outline=_mix(th["accent"], bgc, k), width=2.5)
+            # Avatar follows the theme accent (not a per-station color).
+            self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=th["accent"], outline="")
+            self.create_text(ax, ay, text=_initials(name), fill=th["accent_text"],
                              font=self._font(12, "bold"))
             pill_f = self._font(9, "bold")
             pill_w = pill_f.measure("NEW") + _px(22)
             ts_f = self._font(11, "bold")
             name_f = self._font(18, "bold")
             tx = ax + ar + _px(14)
-            name_max = right - max(pill_w, ts_f.measure(ts)) - _px(12) - tx
+            age = self._age_text(ts)
+            name_max = right - max(pill_w, ts_f.measure(age)) - _px(12) - tx
             self.create_text(tx, ay - _px(10), text=_elide(name_f, name, name_max), anchor="w",
                              fill=th["emph_dark"], font=name_f)
             self.create_text(tx, ay + _px(14), text="is ready for you", anchor="w",
                              fill=sub, font=self._font(11))
-            self.create_text(right, ay - _px(10), text=ts, anchor="e", fill=sub, font=ts_f)
+            self.create_text(right, ay - _px(10), text=age, anchor="e", fill=sub, font=ts_f)
             _rrect(self, right - pill_w, ay + _px(4), right, ay + _px(24), _px(10),
                    fill=th["accent"], outline="")
             self.create_text(right - pill_w / 2, ay + _px(14), text="NEW",
                              fill=th["accent_text"], font=pill_f)
             y = y0 - _px(8)
-        # Older rows above, newest first going up.
+        # Older rows above, newest first going up. Their text lines up with
+        # the newest card's name (tx); only sent rows get an icon (an arrow,
+        # in the gutter left of tx).
+        tx = _px(78)
         first_in = True
         for entry in reversed(rows):
             kind, text, ts = entry
@@ -2036,14 +2075,7 @@ class ReadyLog(tk.Canvas):
             ts_f = self._font(10 if kind == "in" else 9)
             ts_w = ts_f.measure(ts) if ts else 0
             if kind == "in":
-                r = _px(13 if big else 11)
-                ax = _px(28)
-                self.create_oval(ax - r, cy - r, ax + r, cy + r, fill=_avatar_color(text),
-                                 outline="")
-                self.create_text(ax, cy, text=_initials(text), fill="#ffffff",
-                                 font=self._font(9 if not big else 10, "bold"))
                 nf = self._font(12 if big else 11, "bold")
-                tx = _px(52)
                 shown = _elide(nf, text, right - ts_w - _px(60) - tx)
                 self.create_text(tx, cy, text=shown, anchor="w", fill=th["text"], font=nf)
                 self.create_text(tx + nf.measure(shown) + _px(6), cy, text="ready",
@@ -2054,17 +2086,19 @@ class ReadyLog(tk.Canvas):
                     if k < 1:
                         _rrect(self, _px(14), y - rh + 2, W - _px(10), y - 2, _px(8),
                                fill=_mix(th["highlight"], card, k), outline="")
-                cr = _px(8)
-                ax = _px(28)
-                self.create_oval(ax - cr, cy - cr, ax + cr, cy + cr, outline=border, width=1.5)
-                _draw_check(self, ax, cy, _px(8), sub, width=1.6)
+                if kind == "out":
+                    # Drawn arrow (not a glyph) so it looks the same everywhere.
+                    x1, x0, hk = tx - _px(8), tx - _px(24), _px(5)
+                    self.create_line(x0, cy, x1, cy, fill=sub, width=1.8, capstyle="round")
+                    self.create_line(x1 - hk, cy - hk, x1, cy, x1 - hk, cy + hk, fill=sub,
+                                     width=1.8, capstyle="round", joinstyle="round")
                 f = self._font(10)
-                label = ("Sent → " + text) if kind == "out" else text
-                self.create_text(_px(52), cy, text=_elide(f, label, right - ts_w - _px(16) - _px(52)),
+                label = ("Sent to " + text) if kind == "out" else text
+                self.create_text(tx, cy, text=_elide(f, label, right - ts_w - _px(16) - tx),
                                  anchor="w", fill=sub, font=f)
             if ts:
                 self.create_text(right, cy, text=ts, anchor="e", fill=sub, font=ts_f)
-            self.create_line(_px(52), y - rh, right, y - rh, fill=border)
+            self.create_line(tx, y - rh, right, y - rh, fill=border)
             y -= rh
 
 
@@ -2625,6 +2659,8 @@ class ChairsideReadyAlertApp:
         self._build_menu()
         self._build_ui()
         self._load_config_into_form()
+        if not self._has_real_station_label():
+            self.root.after(800, self._prompt_station_setup_if_needed)
         self._sync_autostart_state()
         # Restore today's Ready log (if any) and start the daily-rollover timer.
         # Must run after _build_ui creates self.log.
@@ -3348,6 +3384,8 @@ class ChairsideReadyAlertApp:
     def _build_menu(self) -> None:
         menu = tk.Menu(self.root)
         settings_menu = tk.Menu(menu, tearoff=0)
+        settings_menu.add_command(label="This Station's Name...", command=self._open_station_name_dialog)
+        settings_menu.add_separator()
         if IS_FROZEN and sys.platform.startswith("win"):
             # Store builds use the AppxManifest startupTask extension; the
             # real on/off switch lives in Settings -> Apps -> Startup. A
@@ -4700,6 +4738,7 @@ class ChairsideReadyAlertApp:
         if hasattr(self, "_header_title"):
             self._header_title.configure(bg=bg, fg=title_c)
             self._header_sub.configure(bg=bg, fg=sub_c)
+            self._station_edit_link.configure(bg=bg, fg=accent)
         if _ready_animations is not None:
             # Stick figure + effects follow the theme (light ink on Midnight).
             try:
@@ -4768,15 +4807,27 @@ class ChairsideReadyAlertApp:
         self._header_title = tk.Label(title_box, text=APP_TITLE, bg=abg, fg=t["title"],
                                       font=_ui_font(16, "bold"))
         self._header_title.pack(anchor="w")
-        self._header_sub = tk.Label(title_box, text="", bg=abg, fg=t["sub"], font=_ui_font(10))
-        self._header_sub.pack(anchor="w")
+        # "This station: X  Edit". The station name is deliberately not an
+        # always-visible dropdown: staff mistook it for "who to send to" and
+        # renamed their own station by accident. Edit opens a dialog instead.
+        self._header_sub_row = tk.Frame(title_box, bg=abg)
+        self._header_sub_row.pack(anchor="w")
+        self._header_sub = tk.Label(self._header_sub_row, text="", bg=abg, fg=t["sub"], font=_ui_font(10))
+        self._header_sub.pack(side="left")
+        self._station_edit_link = tk.Label(self._header_sub_row, text="Edit", bg=abg, fg=t["accent"],
+                                           font=_ui_font(9, "underline"), cursor="hand2", bd=0, padx=0)
+        self._station_edit_link.pack(side="left", padx=(8, 0))
+        self._station_edit_link.bind("<Button-1>", lambda _e: self._open_station_name_dialog())
+        self.duplicate_name_var = tk.StringVar(value="")
+        self.duplicate_name_label = tk.Label(title_box, textvariable=self.duplicate_name_var, fg=t["sub"],
+                                             bg=abg, font=_ui_font(9, "bold"), anchor="w", justify="left", bd=0)
         self._status_pill = StatusPill(header, t)
         self._status_pill.pack(side="right")
         self._themed_widgets.append(self._status_pill)
         self.label_var.trace_add("write", lambda *_: self._refresh_header_station())
         self._refresh_header_station()
 
-        # Top row: Station Setup | Ready Messages.
+        # Top row: Ready Messages (full width).
         # Expands vertically so the Ready Messages log absorbs any extra
         # window height that isn't claimed by the Send to card below.
         # The Send to card sizes to its content (see below), so when
@@ -4788,65 +4839,11 @@ class ChairsideReadyAlertApp:
         self._build_trial_banner(main, bg_color=abg)
         top_row.pack(fill="both", expand=True, pady=(0, 2))
         self._top_row_frame = top_row
-        self._main_shell_frames = (main, header, top_row, title_box)
-
-        # Station Setup — compact left card
-        _lc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
-        _lc.pack(side="left", fill="y", padx=(0, 4))
-        self._cards.append(_lc)
-        left = _lc.inner_frame
-
-        ttk.Label(left, text="STATION SETUP", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 8))
-        ttk.Label(left, text="Station name", style="Card.TLabel").pack(anchor="w", pady=(0, 3))
-        # Readonly: free-text typing was redundant with the new "Add or Remove
-        # Computers..." dialog and led to drift between local typed names and the
-        # network-shared list. Users now pick from the dropdown only.
-        # width=38 fits the STATION_NAME_PROMPT placeholder shown on a fresh
-        # install ("Please choose the name of this Station"). Real station
-        # names are short ("Room 1", "Doctor", "Lab"); the extra width just
-        # leaves whitespace once a name is picked, which is fine.
-        self.label_combo = ttk.Combobox(left, textvariable=self.label_var,
-                                         values=list(self._effective_station_labels()),
-                                         width=38, state="readonly")
-        self.label_combo.pack(fill="x")
-        self.label_combo.bind("<<ComboboxSelected>>", self._on_station_label_selected)
-        self.duplicate_name_var = tk.StringVar(value="")
-        self.duplicate_name_label = tk.Label(
-            left,
-            textvariable=self.duplicate_name_var,
-            fg=t["sub"],
-            bg=cbg,
-            font=_ui_font(8),
-            anchor="w",
-            justify="left",
-        )
-        self.duplicate_name_label.pack(anchor="w", pady=(4, 0))
-
-        ttk.Label(left, text="Alert sound", style="Card.TLabel").pack(anchor="w", pady=(10, 3))
-        sound_row = tk.Frame(left, bg=cbg)
-        sound_row.pack(fill="x")
-        self.sound_combo = ttk.Combobox(
-            sound_row, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=18
-        )
-        self.sound_combo.pack(side="left", fill="x", expand=True)
-        prev_btn = IconButton(
-            sound_row, t,
-            command=lambda: self._play_alert_sound(
-                self.alert_sound_var.get(), int(self.alert_volume_var.get())
-            ),
-        )
-        prev_btn.pack(side="left", padx=(8, 0))
-        self._themed_widgets.append(prev_btn)
-
-        ttk.Label(left, text="Alert volume", style="Card.TLabel").pack(anchor="w", pady=(12, 3))
-        self._volume_scale = VolumeSlider(left, self.alert_volume_var, t,
-                                          on_release=self._persist_form)
-        self._volume_scale.pack(fill="x")
-        self._themed_widgets.append(self._volume_scale)
+        self._main_shell_frames = (main, header, top_row, title_box, self._header_sub_row)
 
         # Ready Messages — expanding right card
         _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
-        _rc.pack(side="left", fill="both", expand=True, padx=(4, 0))
+        _rc.pack(side="left", fill="both", expand=True)
         self._cards.append(_rc)
         right = _rc.inner_frame
 
@@ -4899,13 +4896,46 @@ class ChairsideReadyAlertApp:
         # canvas track the inner frame's height, so the card grows and shrinks
         # automatically as peers come and go on the LAN.
         _mc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=14)
-        _mc.pack(fill="x")
+        _mc.pack(fill="x", pady=(0, 2))
         self._cards.append(_mc)
         msg = _mc.inner_frame
 
         ttk.Label(msg, text="SEND TO", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 6))
         self.targets_frame = tk.Frame(msg, bg=cbg)
         self.targets_frame.pack(fill="x", pady=(0, 2))
+        self._target_chips: list = []
+        self._chip_layout_key = None
+        self.targets_frame.bind("<Configure>", lambda _e: self._layout_target_chips())
+
+        # Alert sound | Volume — one horizontal strip under Send to.
+        _sc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=12)
+        _sc.pack(fill="x")
+        self._cards.append(_sc)
+        st = _sc.inner_frame
+        ttk.Label(st, text="ALERT SOUND", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(st, text="VOLUME", style="CardTitle.TLabel").grid(row=0, column=1, sticky="w", padx=(24, 0),
+                                                                    pady=(0, 4))
+        sound_row = tk.Frame(st, bg=cbg)
+        sound_row.grid(row=1, column=0, sticky="ew")
+        self.sound_combo = ttk.Combobox(
+            sound_row, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=18
+        )
+        self.sound_combo.pack(side="left", fill="x", expand=True)
+        prev_btn = IconButton(
+            sound_row, t,
+            command=lambda: self._play_alert_sound(
+                self.alert_sound_var.get(), int(self.alert_volume_var.get())
+            ),
+        )
+        prev_btn.pack(side="left", padx=(8, 0))
+        self._themed_widgets.append(prev_btn)
+        self._volume_scale = VolumeSlider(st, self.alert_volume_var, t, on_release=self._persist_form)
+        self._volume_scale.grid(row=1, column=1, sticky="ew", padx=(24, 0))
+        self._themed_widgets.append(self._volume_scale)
+        st.grid_columnconfigure(0, weight=2)
+        st.grid_columnconfigure(1, weight=3, minsize=150)
+        # The station-name picker only exists while the station dialog is open.
+        self.label_combo = None
         self._refresh_target_checkboxes([])
         self._refresh_lan_status_banner()
 
@@ -4914,10 +4944,11 @@ class ChairsideReadyAlertApp:
             return
         name = self.label_var.get().strip()
         if not name or name == STATION_NAME_PROMPT:
-            text = "Choose this station's name under Station Setup"
+            text = "This station isn't set up yet"
         else:
             text = f"This station: {name}"
         self._header_sub.configure(text=text)
+        self._station_edit_link.configure(text="Edit" if self._has_real_station_label() else "Set up")
 
     def _refresh_status_pill(self) -> None:
         pill = getattr(self, "_status_pill", None)
@@ -4974,7 +5005,8 @@ class ChairsideReadyAlertApp:
         else:
             self.alert_sound_var.set(default_sound)
         self.alert_volume_var.set(int(data.get("alert_volume", 50)))
-        self.label_combo["values"] = list(self._effective_station_labels())
+        if self.label_combo is not None:
+            self.label_combo["values"] = list(self._effective_station_labels())
         self._target_signature = None
         self._last_committed_label = committed_label
         self._refresh_target_checkboxes(list(self.online_labels))
@@ -5242,6 +5274,132 @@ class ChairsideReadyAlertApp:
     def _on_station_label_selected(self, _event=None) -> None:
         self._commit_station_label_if_changed()
 
+    def _prompt_station_setup_if_needed(self) -> None:
+        """Fresh install: ask for this station's name once the main window is
+        on screen."""
+        if self._has_real_station_label():
+            return
+        try:
+            if self.root.state() == "withdrawn":
+                self.root.after(500, self._prompt_station_setup_if_needed)
+                return
+        except tk.TclError:
+            return
+        self._open_station_name_dialog()
+
+    def _open_station_name_dialog(self) -> None:
+        """Pick THIS computer's station name. Reached from the header Edit link
+        or Settings -> This Station's Name; prompted automatically on first
+        launch. Renaming warns first, since the usual mistake is picking a
+        room here when the user meant to send that room a Ready."""
+        existing = getattr(self, "_station_dialog", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_set()
+                    return
+            except tk.TclError:
+                pass
+        t = self._current_theme
+        first_time = not self._has_real_station_label()
+        current = "" if first_time else self.label_var.get().strip()
+        warn_fg = "#f87171" if _is_dark(t["bg"]) else "#b45309"
+        win = tk.Toplevel(self.root)
+        win.title("This Station's Name")
+        win.transient(self.root)
+        win.resizable(False, False)
+        win.configure(bg=t["bg"])
+        self._station_dialog = win
+        frame = tk.Frame(win, bg=t["bg"], padx=20, pady=16)
+        frame.pack(fill="both", expand=True)
+        wrap = 420
+        if first_time:
+            heading = "Welcome! Which room is this computer in?"
+            body = ("Choose the name of THIS computer. Other stations will see this name "
+                    "when you send them a Ready alert.")
+        else:
+            heading = "Change this station's name?"
+            body = f"This computer is currently named \"{current}\"."
+        tk.Label(frame, text=heading, font=_ui_font(13, "bold"), bg=t["bg"], fg=t["title"],
+                 bd=0, wraplength=wrap, justify="left").pack(anchor="w")
+        tk.Label(frame, text=body, wraplength=wrap, justify="left", font=_ui_font(10),
+                 bg=t["bg"], fg=t["text"], bd=0).pack(anchor="w", pady=(6, 0))
+        if not first_time:
+            tk.Label(frame, wraplength=wrap, justify="left", font=_ui_font(10, "bold"), bg=t["bg"],
+                     fg=warn_fg, bd=0,
+                     text=("You don't need to change this to send a Ready. To alert another room, "
+                           "pick it under \"Send to\" on the main screen. Only change this if you "
+                           "really want to rename this computer.")).pack(anchor="w", pady=(8, 0))
+        pick_var = tk.StringVar(value=current)
+        # Editable: pick an existing name or type a new one. This dialog is
+        # the only place the name can change -- the main window has no picker.
+        combo = ttk.Combobox(frame, textvariable=pick_var, values=list(self._effective_station_labels()),
+                             state="normal", width=34)
+        combo.pack(fill="x", pady=(12, 0))
+        self.label_combo = combo
+        tk.Label(frame, text="Pick a name from the list, or type a new one.", font=_ui_font(9),
+                 bg=t["bg"], fg=t["sub"], bd=0).pack(anchor="w", pady=(6, 0))
+
+        def close() -> None:
+            self.label_combo = None
+            self._station_dialog = None
+            try:
+                win.grab_release()
+            except tk.TclError:
+                pass
+            win.destroy()
+
+        def save() -> None:
+            new = pick_var.get().strip()
+            if not new or new == STATION_NAME_PROMPT:
+                messagebox.showinfo(APP_TITLE, "Pick or type a name for this computer.", parent=win)
+                return
+            if len(new) > 40:
+                messagebox.showinfo(APP_TITLE, "Please keep the station name to 40 characters or fewer.",
+                                    parent=win)
+                return
+            if new == current:
+                close()
+                return
+            if current and not messagebox.askyesno(
+                APP_TITLE,
+                f"Rename this computer from \"{current}\" to \"{new}\"?\n\n"
+                f"Other stations will see Ready alerts from this computer as \"{new}\".",
+                icon="warning", parent=win,
+            ):
+                return
+            close()
+            labels = self._effective_station_labels()
+            if new not in labels:
+                # A typed name joins the shared list, same as Default ->
+                # Add or Remove Computers, so every station can send to it.
+                removed = self._removed_station_labels()
+                if new in removed:
+                    self._set_removed_labels([r for r in removed if r != new])
+                self._set_station_labels(labels + [new])
+                self._broadcast_label_event("add", new)
+            self.label_var.set(new)
+            self._commit_station_label_if_changed()
+
+        buttons = tk.Frame(frame, bg=t["bg"])
+        buttons.pack(fill="x", pady=(16, 0))
+        RoundedButton(buttons, text="Save", command=save,
+                      bg=t["accent"], fg=t["accent_text"]).pack(side="right")
+        RoundedButton(buttons, text="Cancel", command=close,
+                      bg=t["card_bg"], fg=t["text"]).pack(side="right", padx=(0, 8))
+        win.protocol("WM_DELETE_WINDOW", close)
+        win.bind("<Escape>", lambda _e: close())
+        win.update_idletasks()
+        try:
+            x = self.root.winfo_rootx() + (self.root.winfo_width() - win.winfo_reqwidth()) // 2
+            y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - win.winfo_reqheight()) // 3)
+            win.geometry(f"+{max(0, x)}+{max(0, y)}")
+            win.grab_set()
+        except tk.TclError:
+            pass
+        combo.focus_set()
+
     def _commit_station_label_if_changed(self) -> None:
         # Combobox is readonly — the value is always one of the dropdown entries
         # already in station_labels. Nothing to validate or auto-add.
@@ -5289,7 +5447,7 @@ class ChairsideReadyAlertApp:
         return bool(raw) and raw != STATION_NAME_PROMPT
 
     def _refresh_station_name_warning(self) -> None:
-        """Drive the message label under the Station name combobox. Station-unset
+        """Drive the warning line under "This station: X" in the header. Station-unset
         warning (red) takes priority over duplicate-name warning (amber). Called
         from _set_duplicate_name_warning, _apply_theme, _load_config_into_form,
         and _commit_station_label_if_changed."""
@@ -5297,8 +5455,8 @@ class ChairsideReadyAlertApp:
             return
         t = self._current_theme
         if not self._has_real_station_label():
-            self.duplicate_name_var.set("you need to choose a station to send ready alerts")
-            color = "#dc2626"
+            self.duplicate_name_var.set("Click \"Set up\" to name this station before sending Ready alerts")
+            color = "#f87171" if _is_dark(t["bg"]) else "#dc2626"
         elif self._duplicate_name_detected:
             self.duplicate_name_var.set("Another computer may be using the same station name.")
             color = "#b45309"
@@ -5306,7 +5464,11 @@ class ChairsideReadyAlertApp:
             self.duplicate_name_var.set("")
             color = t["sub"]
         if hasattr(self, "duplicate_name_label"):
-            self.duplicate_name_label.configure(fg=color, bg=t["card_bg"], font=_ui_font(8))
+            self.duplicate_name_label.configure(fg=color, bg=t["bg"])
+            if self.duplicate_name_var.get():
+                self.duplicate_name_label.pack(anchor="w")
+            else:
+                self.duplicate_name_label.pack_forget()
 
     def _set_ready_button_enabled(self, enabled: bool) -> None:
         """Visually + functionally disable the Ready button until the user picks
@@ -5368,6 +5530,8 @@ class ChairsideReadyAlertApp:
         self._target_signature = signature
         for child in self.targets_frame.winfo_children():
             child.destroy()
+        self._target_chips = []
+        self._chip_layout_key = None
         self.target_vars.clear()
         filtered = [label for label in labels if label != me]
         default_targets = set(self.config_store.data.get("default_targets", []))
@@ -5382,16 +5546,65 @@ class ChairsideReadyAlertApp:
             ).pack(anchor="w")
             self._rebuild_default_menu()
             return
-        column_count = 4
-        for i, label in enumerate(filtered):
+        for label in filtered:
             checked = (label in default_targets) or old_states.get(label, False)
             var = tk.BooleanVar(value=checked)
             self.target_vars[label] = var
-            StationChip(self.targets_frame, label, var, theme).grid(
-                row=i // column_count, column=i % column_count,
-                sticky="w", padx=(0, _px(8)), pady=_px(3),
-            )
+            self._target_chips.append(StationChip(self.targets_frame, label, var, theme))
+        self._layout_target_chips(force=True)
         self._rebuild_default_menu()
+
+    def _layout_target_chips(self, force: bool = False) -> None:
+        """Centered, wrapping rows of Send to chips, reflowed whenever the
+        card's width changes. Rows are balanced (5 chips -> 3 + 2, not
+        4 + 1) by finding the narrowest width that still needs the same
+        number of rows. Chips are place()d, so the frame height is set here."""
+        chips = [c for c in self._target_chips if c.winfo_exists()]
+        if not chips:
+            return
+        width = self.targets_frame.winfo_width()
+        if width <= 1:
+            width = self.targets_frame.winfo_reqwidth() or _px(600)
+        key = (width, tuple(str(c) for c in chips))
+        if not force and key == self._chip_layout_key:
+            return
+        self._chip_layout_key = key
+        gap, vgap = _px(8), _px(6)
+        sizes = [(c.winfo_reqwidth(), c.winfo_reqheight()) for c in chips]
+
+        def flow(limit: int) -> list[list[int]]:
+            rows: list[list[int]] = [[]]
+            used = 0
+            for i, (w, _h) in enumerate(sizes):
+                need = w if not rows[-1] else used + gap + w
+                if rows[-1] and need > limit:
+                    rows.append([i])
+                    used = w
+                else:
+                    rows[-1].append(i)
+                    used = need
+            return rows
+
+        rows = flow(width)
+        lo = max(w for w, _h in sizes)
+        hi = width
+        while lo < hi:  # narrowest limit that keeps the same row count
+            mid = (lo + hi) // 2
+            if len(flow(mid)) <= len(rows):
+                hi = mid
+            else:
+                lo = mid + 1
+        rows = flow(hi)
+        y = _px(3)
+        for row in rows:
+            row_w = sum(sizes[i][0] for i in row) + gap * (len(row) - 1)
+            row_h = max(sizes[i][1] for i in row)
+            x = max(0, (width - row_w) // 2)
+            for i in row:
+                chips[i].place(x=x, y=y + (row_h - sizes[i][1]) // 2)
+                x += sizes[i][0] + gap
+            y += row_h + vgap
+        self.targets_frame.configure(height=y - vgap + _px(3))
 
     def _trim_log_to_max_entries(self) -> None:
         """Cap the visible log at MAX_VISIBLE_LOG_ENTRIES (oldest dropped).
@@ -5870,7 +6083,7 @@ class ChairsideReadyAlertApp:
 
         label = self.label_var.get().strip()
         if not label or label == STATION_NAME_PROMPT:
-            messagebox.showerror(APP_TITLE, "Choose a station name from the dropdown before starting the network.")
+            messagebox.showerror(APP_TITLE, "Set up this station's name first (click 'Set up' at the top left).")
             return
 
         self.local_ips = local_ipv4_addresses()
@@ -5950,7 +6163,7 @@ class ChairsideReadyAlertApp:
             # Belt-and-suspenders: the Ready button is also visually disabled
             # by _set_ready_button_enabled, but the menu shortcut and keyboard
             # bindings can still fire send_ready_selected. Block here too.
-            messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
+            messagebox.showwarning(APP_TITLE, "Set up this station's name first (click 'Set up' at the top left) — Ready alerts need a sender name.")
             return
         if self._is_locked_out():
             self._prompt_trial_expired_dialog()
@@ -6002,7 +6215,7 @@ class ChairsideReadyAlertApp:
 
     def send_ready_all(self) -> None:
         if not self._has_real_station_label():
-            messagebox.showwarning(APP_TITLE, "Choose a station name from the dropdown first — Ready alerts need a sender name.")
+            messagebox.showwarning(APP_TITLE, "Set up this station's name first (click 'Set up' at the top left) — Ready alerts need a sender name.")
             return
         if self._is_locked_out():
             self._prompt_trial_expired_dialog()

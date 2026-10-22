@@ -3117,8 +3117,8 @@ class AnimationTrigger:
     unit tests stay deterministic."""
 
     MIN_SPACING_SEC = 10 * 60
-    MIN_COUNT = 4
-    MAX_COUNT = 8
+    MIN_COUNT = 3
+    MAX_COUNT = 5
 
     # When True, on_ready_sent() always returns True regardless of the
     # spacing/count rules. Useful while iterating on animation choreography —
