@@ -123,7 +123,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.91"
+APP_VERSION = "1.0.92"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -2247,6 +2247,27 @@ class ReadyLog(tk.Canvas):
             self._sent_entry, self._sent_t0 = entry, time.monotonic()
         self._kick()
 
+    def _draw_target_badges(self, names: list, x: float, cy: float, max_x: float) -> None:
+        th = self.th
+        d, sp = _px(19), _px(4)
+        fill = _mix(th["accent"], th["card_bg"], 0.15)
+        more_f = self._font(9, "bold")
+        n = len(names)
+        fit = 0
+        for k in range(n, -1, -1):
+            w = k * (d + sp) + (more_f.measure(f"+{n - k}") if k < n else -sp)
+            if x + w <= max_x:
+                fit = k
+                break
+        for name in names[:fit]:
+            ini = _initials(name)
+            _oval(self, x, cy - d / 2, x + d, cy + d / 2, fill=fill, outline="")
+            self.create_text(x + d / 2, cy, text=ini, fill=th["accent_text"],
+                             font=self._font(7 if len(ini) > 2 else 8, "bold"))
+            x += d + sp
+        if fit < n:
+            self.create_text(x, cy, text=f"+{n - fit}", anchor="w", fill=th["sub"], font=more_f)
+
     def add_raw(self, text: str) -> None:
         self._insert_outgoing(("raw", text, ""))
         self._kick()
@@ -2401,9 +2422,17 @@ class ReadyLog(tk.Canvas):
                     self.create_line(x1 - hk, cy - hk, x1, cy, x1 - hk, cy + hk, fill=sub,
                                      width=1.8 * _DPI_ZOOM, capstyle="round", joinstyle="round")
                 f = self._font(10)
-                label = ("Sent to " + text) if kind == "out" else text
-                shown = _elide(f, label, right - ts_w - gap - tx)
-                self.create_text(tx, cy, text=shown, anchor="w", fill=sub, font=f)
+                names = [n.strip() for n in text.split(",") if n.strip()] if kind == "out" else []
+                if names and names != ["All"]:
+                    # "Sent to (DP) (R1) (R2)": a small accent circle with
+                    # initials per station (user request), "+N" if they don't fit.
+                    self.create_text(tx, cy, text="Sent to", anchor="w", fill=sub, font=f)
+                    self._draw_target_badges(names, tx + f.measure("Sent to") + _px(6), cy,
+                                             right - ts_w - gap)
+                else:
+                    label = ("Sent to " + text) if kind == "out" else text
+                    shown = _elide(f, label, right - ts_w - gap - tx)
+                    self.create_text(tx, cy, text=shown, anchor="w", fill=sub, font=f)
             if ts:
                 self.create_text(right, cy, text=ts, anchor="e", fill=sub, font=ts_f)
             self.create_line(tx, y - rh, right, y - rh, fill=border)

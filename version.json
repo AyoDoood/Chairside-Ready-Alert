@@ -1,7 +1,7 @@
 {
-  "version": "1.0.91",
+  "version": "1.0.92",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "Smoother look on Windows.\n\n- Rounded corners, circles and shadows are now smooth on Windows instead of jagged: the panels, the Ready button, the Send to chips, the avatar circle, online dots, the volume slider and buttons.",
+  "release_notes": "Shorter \"Sent to\" lines.\n\n- In Ready Messages, \"Sent to\" now shows a small circle with initials for each computer (for example: Sent to DP R1 R2) instead of the full names. If there are too many to fit, the rest show as \"+N\".",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
