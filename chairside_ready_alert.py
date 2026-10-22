@@ -122,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.88"
+APP_VERSION = "1.0.89"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1684,6 +1684,12 @@ class MessageClient:
 
 _UI_SCALE = 1.0
 
+# Windows only: shrink every font (and the _px() geometry that follows it)
+# by this factor. At Tk's default 96-dpi scaling the Windows UI read too
+# large next to the Mac version (user request, 1.0.89). Lowering
+# `tk scaling` shrinks all point-sized fonts at once, including ttk styles.
+WINDOWS_TEXT_SCALE = 0.85
+
 
 def _init_ui_scale(root: tk.Misc) -> None:
     global _UI_SCALE
@@ -1691,6 +1697,12 @@ def _init_ui_scale(root: tk.Misc) -> None:
         s = float(root.tk.call("tk", "scaling"))
     except Exception:
         s = 1.0
+    if sys.platform.startswith("win"):
+        try:
+            s *= WINDOWS_TEXT_SCALE
+            root.tk.call("tk", "scaling", s)
+        except Exception:
+            pass
     _UI_SCALE = max(1.0, min(3.0, s))
 
 

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.88",
+  "version": "1.0.89",
   "release_page_url": "https://github.com/AyoDoood/Chairside-Ready-Alert/releases",
-  "release_notes": "The Ready button now has its own panel.\n\n- Ready Messages and the Ready button sit in two separate side-by-side panels.\n- The Ready button lines up with the top of the message list (just below the \"READY MESSAGES\" title) and grows and shrinks with the window.",
+  "release_notes": "Smaller text on Windows.\n\n- On Windows, all text and controls are about 15% smaller, so the app matches the Mac look and the window takes up less of the screen.\n- Everything still fits: the Ready button, at least four Ready messages, Sound and Volume, and Send to.",
   "files": {
     "chairside_ready_alert.py": {
       "url": "https://raw.githubusercontent.com/AyoDoood/chairside-ready-alert/main/chairside_ready_alert.py",
