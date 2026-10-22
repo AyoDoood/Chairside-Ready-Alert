@@ -122,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.85"
+APP_VERSION = "1.0.86"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1694,6 +1694,24 @@ def _init_ui_scale(root: tk.Misc) -> None:
     _UI_SCALE = max(1.0, min(3.0, s))
 
 
+def _usable_screen_size(root: tk.Misc) -> tuple[int, int]:
+    """(width, height) in Tk units that a top-level window can use: the
+    work area (screen minus taskbar) on Windows, minus room for the title
+    bar. Falls back to the full screen minus a margin elsewhere."""
+    w, h = root.winfo_screenwidth(), root.winfo_screenheight() - 90
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rect = wintypes.RECT()
+            # SPI_GETWORKAREA; coordinates match Tk's for a non-DPI-aware process.
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+                w, h = rect.right - rect.left, rect.bottom - rect.top - 40
+        except Exception:
+            pass
+    return w, h
+
+
 def _px(n: float) -> int:
     return int(round(n * _UI_SCALE))
 
@@ -2245,8 +2263,8 @@ class StationChip(tk.Canvas):
     = soft outline with a green online dot."""
 
     def __init__(self, parent, text: str, var: tk.BooleanVar, theme: dict) -> None:
-        self._f = tkfont.Font(root=parent, family=_ui_family(), size=11, weight="bold")
-        super().__init__(parent, width=self._f.measure(text) + _px(54), height=_px(34),
+        self._f = tkfont.Font(root=parent, family=_ui_family(), size=9, weight="bold")
+        super().__init__(parent, width=self._f.measure(text) + _px(40), height=StationChip.height(),
                          highlightthickness=0, bd=0, bg=theme["card_bg"], cursor="hand2")
         self.text, self.var, self.th, self._hover = text, var, theme, False
         self._trace = var.trace_add("write", lambda *_: self._draw())
@@ -2255,6 +2273,10 @@ class StationChip(tk.Canvas):
         self.bind("<Leave>", lambda _e: self._set_hover(False))
         self.bind("<Destroy>", self._on_destroy)
         self._draw()
+
+    @staticmethod
+    def height() -> int:
+        return _px(26)
 
     def _on_destroy(self, e: tk.Event) -> None:
         if e.widget is self:
@@ -2279,16 +2301,16 @@ class StationChip(tk.Canvas):
         if sel:
             _gradient_rrect(self, 1, 2, w - 2, h - 3, r, th["accent"], th.get("accent2", th["accent"]))
             fg = th["accent_text"]
-            _draw_check(self, _px(19), h / 2, _px(10), fg, width=2)
+            _draw_check(self, _px(14), h / 2, _px(8), fg, width=2)
         else:
             _rrect(self, 1, 2, w - 2, h - 3, r, fill=th.get("chip_bg", th["input_bg"]),
                    outline=th["accent"] if self._hover else th.get("card_border", "#e2e8f0"),
                    width=1.2)
             fg = th["text"]
-            d = _px(4)
-            self.create_oval(_px(19) - d, h / 2 - d, _px(19) + d, h / 2 + d, fill=th["status"],
+            d = _px(3.5)
+            self.create_oval(_px(14) - d, h / 2 - d, _px(14) + d, h / 2 + d, fill=th["status"],
                              outline="")
-        self.create_text(_px(32), h / 2, text=self.text, anchor="w", fill=fg, font=self._f)
+        self.create_text(_px(25), h / 2, text=self.text, anchor="w", fill=fg, font=self._f)
 
 
 class VolumeSlider(tk.Canvas):
@@ -2565,8 +2587,12 @@ class ChairsideReadyAlertApp:
         _init_ui_family(root)
         _init_ui_scale(root)
         self.root.title(APP_TITLE)
-        self.root.geometry("980x760")
-        self.root.minsize(940, 700)
+        # Fit the usable screen: Tk on Windows isn't DPI-aware, so at 125-150%
+        # display scaling a fixed 760-tall window overflows a 1080p screen.
+        _, avail_h = _usable_screen_size(self.root)
+        win_h = max(480, min(760, avail_h))
+        self.root.geometry(f"980x{win_h}")
+        self.root.minsize(940, min(700, win_h))
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
@@ -4839,7 +4865,13 @@ class ChairsideReadyAlertApp:
         self._build_trial_banner(main, bg_color=abg)
         top_row.pack(fill="both", expand=True, pady=(0, 2))
         self._top_row_frame = top_row
-        self._main_shell_frames = (main, header, top_row, title_box, self._header_sub_row)
+        # Ready button, Send to and sound cards live in a bottom stack packed
+        # ahead of top_row, so on a short screen the Ready Messages log
+        # (newest at its bottom) gives up height instead of these panels
+        # being cut off.
+        bottom = tk.Frame(main, bg=abg)
+        bottom.pack(side="bottom", fill="x", before=top_row)
+        self._main_shell_frames = (main, header, top_row, title_box, self._header_sub_row, bottom)
 
         # Ready Messages — expanding right card
         _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
@@ -4866,7 +4898,7 @@ class ChairsideReadyAlertApp:
         _rc.fill_height = True
 
         # Ready button card (.ready-wrap centered, button ~80% width)
-        _rbc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=12)
+        _rbc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=12)
         _rbc.pack(fill="x", pady=(0, 2))
         self._cards.append(_rbc)
         # Full-width row; inner frame pack(anchor="center") centers the button in the window.
@@ -4895,20 +4927,24 @@ class ChairsideReadyAlertApp:
         # station chips). RoundedCard's _on_inner_resize already makes the
         # canvas track the inner frame's height, so the card grows and shrinks
         # automatically as peers come and go on the LAN.
-        _mc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=14)
+        _mc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=10)
         _mc.pack(fill="x", pady=(0, 2))
         self._cards.append(_mc)
         msg = _mc.inner_frame
 
-        ttk.Label(msg, text="SEND TO", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 6))
-        self.targets_frame = tk.Frame(msg, bg=cbg)
-        self.targets_frame.pack(fill="x", pady=(0, 2))
+        # Compact: "SEND TO" sits left of the chips, and the chip area has a
+        # constant height that fits two rows (_layout_target_chips).
+        ttk.Label(msg, text="SEND TO", style="CardTitle.TLabel").pack(side="left", anchor="center",
+                                                                    padx=(0, 12))
+        self.targets_frame = tk.Frame(msg, bg=cbg, height=self._send_to_area_height())
+        self.targets_frame.pack(side="left", fill="x", expand=True)
+        self.targets_frame.pack_propagate(False)
         self._target_chips: list = []
         self._chip_layout_key = None
         self.targets_frame.bind("<Configure>", lambda _e: self._layout_target_chips())
 
         # Alert sound | Volume — one horizontal strip under Send to.
-        _sc = RoundedCard(main, bg=cbg, outer_bg=abg, padding=12)
+        _sc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=10)
         _sc.pack(fill="x")
         self._cards.append(_sc)
         st = _sc.inner_frame
@@ -5538,12 +5574,13 @@ class ChairsideReadyAlertApp:
         theme = self._current_theme
         self._refresh_status_pill()
         if not filtered:
+            self.targets_frame.configure(height=self._send_to_area_height())
             tk.Label(
                 self.targets_frame,
                 text="No other stations online yet. Names appear here after this computer sees them on the LAN.",
                 wraplength=_px(520), bg=theme["card_bg"], fg=theme["sub"], font=_ui_font(10),
                 justify="left",
-            ).pack(anchor="w")
+            ).place(x=0, rely=0.5, anchor="w")
             self._rebuild_default_menu()
             return
         for label in filtered:
@@ -5563,13 +5600,13 @@ class ChairsideReadyAlertApp:
         if not chips:
             return
         width = self.targets_frame.winfo_width()
-        if width <= 1:
-            width = self.targets_frame.winfo_reqwidth() or _px(600)
+        if width <= 1:  # not laid out yet; <Configure> reflows with the real width
+            width = _px(600)
         key = (width, tuple(str(c) for c in chips))
         if not force and key == self._chip_layout_key:
             return
         self._chip_layout_key = key
-        gap, vgap = _px(8), _px(6)
+        gap, vgap = _px(6), _px(4)
         sizes = [(c.winfo_reqwidth(), c.winfo_reqheight()) for c in chips]
 
         def flow(limit: int) -> list[list[int]]:
@@ -5595,7 +5632,12 @@ class ChairsideReadyAlertApp:
             else:
                 lo = mid + 1
         rows = flow(hi)
-        y = _px(3)
+        heights = [max(sizes[i][1] for i in row) for row in rows]
+        content_h = sum(heights) + vgap * (len(rows) - 1)
+        # Constant box: one row sits centered; a second row pushes the first
+        # up. Only a third row (very narrow window, many stations) grows it.
+        area_h = max(self._send_to_area_height(), content_h)
+        y = (area_h - content_h) // 2
         for row in rows:
             row_w = sum(sizes[i][0] for i in row) + gap * (len(row) - 1)
             row_h = max(sizes[i][1] for i in row)
@@ -5604,7 +5646,13 @@ class ChairsideReadyAlertApp:
                 chips[i].place(x=x, y=y + (row_h - sizes[i][1]) // 2)
                 x += sizes[i][0] + gap
             y += row_h + vgap
-        self.targets_frame.configure(height=y - vgap + _px(3))
+        if int(self.targets_frame.cget("height")) != area_h:
+            self.targets_frame.configure(height=area_h)
+
+    @staticmethod
+    def _send_to_area_height() -> int:
+        """Fixed height of the Send to chip area: two rows of StationChips."""
+        return 2 * StationChip.height() + _px(4)
 
     def _trim_log_to_max_entries(self) -> None:
         """Cap the visible log at MAX_VISIBLE_LOG_ENTRIES (oldest dropped).
