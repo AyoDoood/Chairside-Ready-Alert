@@ -122,7 +122,7 @@ _UI_FAMILY: Optional[str] = None
 
 
 APP_TITLE = "Chairside Ready Alert"
-APP_VERSION = "1.0.86"
+APP_VERSION = "1.0.87"
 
 # Maximum number of Ready-log entries shown in the widget. Older entries
 # are dropped from the display (still kept in ready_log.txt for the day).
@@ -1900,7 +1900,7 @@ class ReadyLog(tk.Canvas):
 
     def __init__(self, parent, theme: dict) -> None:
         super().__init__(parent, highlightthickness=0, bd=0, bg=theme["card_bg"],
-                         height=_px(180))
+                         height=_px(164))  # newest card + 3 rows
         self.th = theme
         self.entries: list[tuple[str, str, str]] = []
         self._arrive_t0 = -10.0
@@ -2040,7 +2040,7 @@ class ReadyLog(tk.Canvas):
         if rows[-1][0] == "in":
             _, name, ts = rows.pop()
             k = min(1.0, (time.monotonic() - self._arrive_t0) / 0.9)
-            ch = _px(74)
+            ch = _px(62)
             slide = 1 - (1 - k) ** 3
             y1 = H - _px(4)
             y0 = y1 - ch + (1 - slide) * _px(18)
@@ -2048,7 +2048,7 @@ class ReadyLog(tk.Canvas):
             _rrect(self, _px(2), y0, W - _px(2), y1, _px(14), fill=bgc, outline="")
             self.create_rectangle(_px(2), y0 + _px(12), _px(6), y1 - _px(12),
                                   fill=th["accent"], outline="")
-            ax, ay, ar = _px(42), (y0 + y1) / 2, _px(22)
+            ax, ay, ar = _px(34), (y0 + y1) / 2, _px(19)
             if k < 1:
                 pr = ar + _px(4) + _px(16) * k
                 self.create_oval(ax - pr, ay - pr, ax + pr, ay + pr,
@@ -2056,48 +2056,53 @@ class ReadyLog(tk.Canvas):
             # Avatar follows the theme accent (not a per-station color).
             self.create_oval(ax - ar, ay - ar, ax + ar, ay + ar, fill=th["accent"], outline="")
             self.create_text(ax, ay, text=_initials(name), fill=th["accent_text"],
-                             font=self._font(12, "bold"))
+                             font=self._font(11, "bold"))
             pill_f = self._font(9, "bold")
             pill_w = pill_f.measure("NEW") + _px(22)
             ts_f = self._font(11, "bold")
-            name_f = self._font(18, "bold")
-            tx = ax + ar + _px(14)
+            name_f = self._font(16, "bold")
+            tx = ax + ar + _px(13)  # = _px(66); older rows align to this
+            # Age and NEW are right-aligned to the log's edge.
             age = self._age_text(ts)
-            name_max = right - max(pill_w, ts_f.measure(age)) - _px(12) - tx
-            self.create_text(tx, ay - _px(10), text=_elide(name_f, name, name_max), anchor="w",
+            gap = _px(10)
+            shown = _elide(name_f, name, right - tx - max(pill_w, ts_f.measure(age)) - gap)
+            self.create_text(tx, ay - _px(9), text=shown, anchor="w",
                              fill=th["emph_dark"], font=name_f)
-            self.create_text(tx, ay + _px(14), text="is ready for you", anchor="w",
-                             fill=sub, font=self._font(11))
-            self.create_text(right, ay - _px(10), text=age, anchor="e", fill=sub, font=ts_f)
-            _rrect(self, right - pill_w, ay + _px(4), right, ay + _px(24), _px(10),
+            self.create_text(right, ay - _px(8), text=age, anchor="e", fill=sub, font=ts_f)
+            self.create_text(tx, ay + _px(12), text="is ready for you", anchor="w",
+                             fill=sub, font=self._font(10))
+            px0 = right - pill_w
+            _rrect(self, px0, ay + _px(3), px0 + pill_w, ay + _px(21), _px(9),
                    fill=th["accent"], outline="")
-            self.create_text(right - pill_w / 2, ay + _px(14), text="NEW",
+            self.create_text(px0 + pill_w / 2, ay + _px(12), text="NEW",
                              fill=th["accent_text"], font=pill_f)
-            y = y0 - _px(8)
+            y = y0 - _px(6)
         # Older rows above, newest first going up. Their text lines up with
         # the newest card's name (tx); only sent rows get an icon (an arrow,
         # in the gutter left of tx).
-        tx = _px(78)
+        tx = _px(66)
         first_in = True
         for entry in reversed(rows):
             kind, text, ts = entry
             if kind == "in":
                 big = first_in
                 first_in = False
-                rh = _px(38 if big else 32)
+                rh = _px(32 if big else 28)
             else:
-                rh = _px(28)
+                rh = _px(26)
             if y - rh < 0:
                 break
             cy = y - rh / 2
             ts_f = self._font(10 if kind == "in" else 9)
             ts_w = ts_f.measure(ts) if ts else 0
+            gap = _px(10)
             if kind == "in":
                 nf = self._font(12 if big else 11, "bold")
-                shown = _elide(nf, text, right - ts_w - _px(60) - tx)
+                rf = self._font(11)
+                shown = _elide(nf, text, right - ts_w - gap - rf.measure(" ready") - tx)
                 self.create_text(tx, cy, text=shown, anchor="w", fill=th["text"], font=nf)
-                self.create_text(tx + nf.measure(shown) + _px(6), cy, text="ready",
-                                 anchor="w", fill=sub, font=self._font(11))
+                rx = tx + nf.measure(shown) + _px(6)
+                self.create_text(rx, cy, text="ready", anchor="w", fill=sub, font=rf)
             else:
                 if entry == self._sent_entry:
                     k = min(1.0, (time.monotonic() - self._sent_t0) / 1.0)
@@ -2112,8 +2117,8 @@ class ReadyLog(tk.Canvas):
                                      width=1.8, capstyle="round", joinstyle="round")
                 f = self._font(10)
                 label = ("Sent to " + text) if kind == "out" else text
-                self.create_text(tx, cy, text=_elide(f, label, right - ts_w - _px(16) - tx),
-                                 anchor="w", fill=sub, font=f)
+                shown = _elide(f, label, right - ts_w - gap - tx)
+                self.create_text(tx, cy, text=shown, anchor="w", fill=sub, font=f)
             if ts:
                 self.create_text(right, cy, text=ts, anchor="e", fill=sub, font=ts_f)
             self.create_line(tx, y - rh, right, y - rh, fill=border)
@@ -2127,12 +2132,14 @@ class ReadyButton(tk.Canvas):
     ~1.5s before it settles back to "Ready".
 
     Exposes _bg / _bg2 / _fg / _text / _r / _body_inset so the stick-figure
-    animation's peek mask matches the visible button, not the glow margin."""
+    animation's peek mask matches the visible button, not the glow margin.
+
+    The button body fills the canvas height (minus the glow margins), so
+    packing it with fill="y" makes it as tall as its panel."""
 
     def __init__(self, parent, theme: dict, text: str = "Ready", command=None) -> None:
-        self._gm = (_px(12), _px(6), _px(12), _px(14))  # glow margins l, t, r, b
-        self._bh = _px(56)
-        super().__init__(parent, height=self._bh + self._gm[1] + self._gm[3], width=_px(300),
+        self._gm = (_px(12), _px(4), _px(12), _px(12))  # glow margins l, t, r, b
+        super().__init__(parent, height=_px(62), width=_px(300),
                          highlightthickness=0, bd=0, bg=theme["card_bg"], cursor="hand2")
         self._text = text
         self._command = command
@@ -2144,8 +2151,8 @@ class ReadyButton(tk.Canvas):
         self._sent_until = -10.0
         self._anim_t0 = -10.0
         self._after_id: Optional[str] = None
-        self._f_label = tkfont.Font(root=self, family=_ui_family(), size=17, weight="bold")
-        self._f_sent = tkfont.Font(root=self, family=_ui_family(), size=15, weight="bold")
+        self._f_label = tkfont.Font(root=self, family=_ui_family(), size=20, weight="bold")
+        self._f_sent = tkfont.Font(root=self, family=_ui_family(), size=12, weight="bold")
         self.set_theme(theme)
         self.bind("<Configure>", lambda _e: self._draw())
         self.bind("<Enter>", lambda _e: self._set_state("hover"))
@@ -2169,10 +2176,6 @@ class ReadyButton(tk.Canvas):
         else:
             self._bg = self._bg2 = "#9ca3af"
         self._fg = self.th["accent_text"] if self._enabled else "#ffffff"
-        self._draw()
-
-    def set_canvas_size(self, width: int) -> None:
-        self.configure(width=width)
         self._draw()
 
     def show_sent(self, label: str) -> None:
@@ -2208,15 +2211,15 @@ class ReadyButton(tk.Canvas):
     def _draw(self) -> None:
         try:
             self.delete("all")
-            W = self.winfo_width()
+            W, H = self.winfo_width(), self.winfo_height()
         except tk.TclError:
             return
-        if W < 20:
+        if W < 20 or H < 20:
             return
         th = self.th
         card = th["card_bg"]
-        l, t, r, _b = self._gm
-        x0, y0, x1, y1 = l, t, W - r, t + self._bh
+        l, t, r, b = self._gm
+        x0, y0, x1, y1 = l, t, W - r, max(t + _px(30), H - b)
         now = time.monotonic()
         sent = now < self._sent_until
         c1, c2 = self._bg, self._bg2
@@ -2247,12 +2250,16 @@ class ReadyButton(tk.Canvas):
         _gradient_rrect(self, x0, y0, x1, y1, self._r, c1, c2)
         self.create_line(x0 + self._r, y0 + 2, x1 - self._r, y0 + 2, fill=_mix(c1, "#ffffff", 0.35))
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        # "Ready" text scales with the button (which scales with the panel).
+        want = int(max(16, min(30, min(x1 - x0, (y1 - y0) * 1.4) * 0.15 / _UI_SCALE)))
+        if int(self._f_label.cget("size")) != want:
+            self._f_label.configure(size=want)
         if sent:
-            f = self._f_sent
-            label = _elide(f, self._sent_label, int(x1 - x0) - _px(60))
-            tw = f.measure(label)
-            _draw_check(self, cx - tw / 2 - _px(12), cy, _px(14), self._fg, width=_px(3))
-            self.create_text(cx + _px(6), cy, text=label, fill=self._fg, font=f)
+            # Check above, "Sent to Room 2, Doctor" wrapped below it (the
+            # button is tall and narrow).
+            _draw_check(self, cx, cy - _px(20), _px(14), self._fg, width=_px(3))
+            self.create_text(cx, cy + _px(4), text=self._sent_label, fill=self._fg, font=self._f_sent,
+                             width=max(20, int(x1 - x0) - _px(16)), justify="center", anchor="n")
         else:
             self.create_text(cx, cy, text=self._text, fill=self._fg, font=self._f_label)
 
@@ -2590,9 +2597,7 @@ class ChairsideReadyAlertApp:
         # Fit the usable screen: Tk on Windows isn't DPI-aware, so at 125-150%
         # display scaling a fixed 760-tall window overflows a 1080p screen.
         _, avail_h = _usable_screen_size(self.root)
-        win_h = max(480, min(760, avail_h))
-        self.root.geometry(f"980x{win_h}")
-        self.root.minsize(940, min(700, win_h))
+        self.root.geometry(f"820x{max(480, min(620, avail_h))}")  # refined by _fit_window_to_content
 
         self.queue = queue.Queue()
         self.config_store = ConfigStore(_resolve_config_path())
@@ -2685,6 +2690,7 @@ class ChairsideReadyAlertApp:
         self._build_menu()
         self._build_ui()
         self._load_config_into_form()
+        self._fit_window_to_content()
         if not self._has_real_station_label():
             self.root.after(800, self._prompt_station_setup_if_needed)
         self._sync_autostart_state()
@@ -4777,10 +4783,6 @@ class ChairsideReadyAlertApp:
             # Color + text are decided by _refresh_station_name_warning so the
             # red station-unset prompt isn't overwritten by a theme switch.
             self._refresh_station_name_warning()
-        if hasattr(self, "_ready_wrap"):
-            self._ready_wrap.configure(bg=card)
-        if hasattr(self, "_ready_center"):
-            self._ready_center.configure(bg=card)
         if self._tray_icon is not None:
             try:
                 self._tray_icon.icon = self._create_tray_icon_image()
@@ -4795,8 +4797,10 @@ class ChairsideReadyAlertApp:
         if hasattr(self, "_ready_btn_widget"):
             self._set_ready_button_enabled(getattr(self, "_ready_button_enabled", True))
         # Update sound_row and targets_frame direct-color tk frames
-        if hasattr(self, "sound_combo"):
-            self.sound_combo.master.configure(bg=card)
+        for f in (getattr(self, "_sound_strip", None), getattr(self, "_send_row", None),
+                  getattr(self, "_log_col", None)):
+            if f is not None:
+                f.configure(bg=card)
         if hasattr(self, "targets_frame"):
             self.targets_frame.configure(bg=card)
         # Force checkboxes to repaint with new card background
@@ -4817,27 +4821,32 @@ class ChairsideReadyAlertApp:
         cbg, abg = t["card_bg"], t["bg"]
         cborder = t.get("card_border")
 
-        main = tk.Frame(self.root, bg=abg, padx=16, pady=16)
+        main = tk.Frame(self.root, bg=abg, padx=10, pady=8)
         main.pack(fill="both", expand=True)
 
+        # Header, one line: logo + app name on the left; "This station: X
+        # Edit" and the live status pill ("3 stations online") on the right.
         header = tk.Frame(main, bg=abg)
-        header.pack(fill="x", pady=(0, 6))
-        # Header: logo, app name + "This station: ...", and a live status
-        # pill ("3 stations online" / "Waiting for other workstations…").
+        header.pack(fill="x", pady=(0, 4))
         self._themed_widgets: list = []
-        logo = AppLogo(header, t, size=38)
+        logo = AppLogo(header, t, size=30)
         logo.pack(side="left")
         self._themed_widgets.append(logo)
         title_box = tk.Frame(header, bg=abg)
-        title_box.pack(side="left", padx=(10, 0))
+        title_box.pack(side="left", padx=(8, 0))
         self._header_title = tk.Label(title_box, text=APP_TITLE, bg=abg, fg=t["title"],
-                                      font=_ui_font(16, "bold"))
+                                      font=_ui_font(14, "bold"))
         self._header_title.pack(anchor="w")
-        # "This station: X  Edit". The station name is deliberately not an
-        # always-visible dropdown: staff mistook it for "who to send to" and
-        # renamed their own station by accident. Edit opens a dialog instead.
-        self._header_sub_row = tk.Frame(title_box, bg=abg)
-        self._header_sub_row.pack(anchor="w")
+        self._status_pill = StatusPill(header, t)
+        self._status_pill.pack(side="right")
+        self._themed_widgets.append(self._status_pill)
+        # The station name is deliberately not an always-visible dropdown:
+        # staff mistook it for "who to send to" and renamed their own
+        # station by accident. Edit opens a dialog instead.
+        self._station_box = tk.Frame(header, bg=abg)
+        self._station_box.pack(side="right", padx=(0, 12))
+        self._header_sub_row = tk.Frame(self._station_box, bg=abg)
+        self._header_sub_row.pack(anchor="e")
         self._header_sub = tk.Label(self._header_sub_row, text="", bg=abg, fg=t["sub"], font=_ui_font(10))
         self._header_sub.pack(side="left")
         self._station_edit_link = tk.Label(self._header_sub_row, text="Edit", bg=abg, fg=t["accent"],
@@ -4845,11 +4854,9 @@ class ChairsideReadyAlertApp:
         self._station_edit_link.pack(side="left", padx=(8, 0))
         self._station_edit_link.bind("<Button-1>", lambda _e: self._open_station_name_dialog())
         self.duplicate_name_var = tk.StringVar(value="")
-        self.duplicate_name_label = tk.Label(title_box, textvariable=self.duplicate_name_var, fg=t["sub"],
-                                             bg=abg, font=_ui_font(9, "bold"), anchor="w", justify="left", bd=0)
-        self._status_pill = StatusPill(header, t)
-        self._status_pill.pack(side="right")
-        self._themed_widgets.append(self._status_pill)
+        self.duplicate_name_label = tk.Label(self._station_box, textvariable=self.duplicate_name_var,
+                                             fg=t["sub"], bg=abg, font=_ui_font(8, "bold"), anchor="e",
+                                             justify="right", bd=0)
         self.label_var.trace_add("write", lambda *_: self._refresh_header_station())
         self._refresh_header_station()
 
@@ -4871,10 +4878,11 @@ class ChairsideReadyAlertApp:
         # being cut off.
         bottom = tk.Frame(main, bg=abg)
         bottom.pack(side="bottom", fill="x", before=top_row)
-        self._main_shell_frames = (main, header, top_row, title_box, self._header_sub_row, bottom)
+        self._main_shell_frames = (main, header, top_row, title_box, self._station_box,
+                                   self._header_sub_row, bottom)
 
         # Ready Messages — expanding right card
-        _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=14)
+        _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=10)
         _rc.pack(side="left", fill="both", expand=True)
         self._cards.append(_rc)
         right = _rc.inner_frame
@@ -4887,89 +4895,76 @@ class ChairsideReadyAlertApp:
                                       fg=t["status"], bg=cbg,
                                       font=_ui_font(9, "bold"))
 
-        self._ready_messages_header = ttk.Label(right, text="READY MESSAGES",
+        # Ready button on the right, as tall as the panel.
+        ready_btn = ReadyButton(right, t, text="Ready", command=self.send_ready_selected)
+        ready_btn.configure(width=_px(220), height=_px(60))
+        ready_btn.pack(side="right", fill="y", padx=(8, 0))
+
+        def _size_ready_btn(e: tk.Event) -> None:
+            # Width is ~36% of the panel (height already fills it via fill="y").
+            if e.widget is right and e.width > 40:
+                w = max(_px(180), min(_px(440), int(e.width * 0.36)))
+                if int(ready_btn.cget("width")) != w:
+                    ready_btn.configure(width=w)
+
+        right.bind("<Configure>", _size_ready_btn, add="+")
+        # Stash the Ready button reference so the whimsy animations can
+        # anchor "emerge from behind this widget" positioning to it.
+        self._ready_btn_widget = ready_btn
+
+        self._log_col = tk.Frame(right, bg=cbg)
+        self._log_col.pack(side="left", fill="both", expand=True)
+        self._ready_messages_header = ttk.Label(self._log_col, text="READY MESSAGES",
                                                 style="CardTitle.TLabel")
         self._ready_messages_header.pack(anchor="w")
 
         # The inner frame has a natural height only, so the log gets its
         # height from the card: fill the card canvas vertically.
-        self.log = ReadyLog(right, t)
-        self.log.pack(fill="both", expand=True, pady=(6, 0))
+        self.log = ReadyLog(self._log_col, t)
+        self.log.pack(fill="both", expand=True, pady=(4, 0))
         _rc.fill_height = True
 
-        # Ready button card (.ready-wrap centered, button ~80% width)
-        _rbc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=12)
-        _rbc.pack(fill="x", pady=(0, 2))
-        self._cards.append(_rbc)
-        # Full-width row; inner frame pack(anchor="center") centers the button in the window.
-        self._ready_wrap = tk.Frame(_rbc.inner_frame, bg=cbg)
-        self._ready_wrap.pack(fill="x")
-        self._ready_center = tk.Frame(self._ready_wrap, bg=cbg)
-        self._ready_center.pack(anchor="center")
-        ready_btn = ReadyButton(self._ready_center, t, text="Ready",
-                                command=self.send_ready_selected)
-        ready_btn.pack()
-        # Stash the Ready button reference so the whimsy animations can
-        # anchor "emerge from behind this widget" positioning to it.
-        self._ready_btn_widget = ready_btn
+        # Bottom panel: Sound + Volume on one line, then the Send to computers.
+        _bc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=10)
+        _bc.pack(fill="x")
+        self._cards.append(_bc)
+        panel = _bc.inner_frame
 
-        def _size_ready_btn(e: tk.Event) -> None:
-            if e.widget != self._ready_wrap:
-                return
-            rw = int(e.width)
-            if rw > 40:
-                ready_btn.set_canvas_size(max(160, int(rw * 0.80)))
+        # Sound [combo] (play)    Volume [slider]
+        st = tk.Frame(panel, bg=cbg)
+        st.pack(fill="x")
+        self._sound_strip = st
+        ttk.Label(st, text="SOUND", style="CardTitle.TLabel").pack(side="left", padx=(0, 8))
+        self.sound_combo = ttk.Combobox(
+            st, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=16
+        )
+        self.sound_combo.pack(side="left")
+        prev_btn = IconButton(
+            st, t,
+            command=lambda: self._play_alert_sound(
+                self.alert_sound_var.get(), int(self.alert_volume_var.get())
+            ),
+        )
+        prev_btn.pack(side="left", padx=(6, 0))
+        self._themed_widgets.append(prev_btn)
+        ttk.Label(st, text="VOLUME", style="CardTitle.TLabel").pack(side="left", padx=(20, 8))
+        self._volume_scale = VolumeSlider(st, self.alert_volume_var, t, on_release=self._persist_form)
+        self._volume_scale.pack(side="left", fill="x", expand=True)
+        self._themed_widgets.append(self._volume_scale)
 
-        self._ready_wrap.bind("<Configure>", _size_ready_btn)
-
-        # Send to card.
-        # fill="x" without expand=True so the card sizes to its content (the
-        # station chips). RoundedCard's _on_inner_resize already makes the
-        # canvas track the inner frame's height, so the card grows and shrinks
-        # automatically as peers come and go on the LAN.
-        _mc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=10)
-        _mc.pack(fill="x", pady=(0, 2))
-        self._cards.append(_mc)
-        msg = _mc.inner_frame
-
-        # Compact: "SEND TO" sits left of the chips, and the chip area has a
+        # Send to: "SEND TO" sits left of the chips, and the chip area has a
         # constant height that fits two rows (_layout_target_chips).
-        ttk.Label(msg, text="SEND TO", style="CardTitle.TLabel").pack(side="left", anchor="center",
-                                                                    padx=(0, 12))
-        self.targets_frame = tk.Frame(msg, bg=cbg, height=self._send_to_area_height())
+        send_row = tk.Frame(panel, bg=cbg)
+        send_row.pack(fill="x", pady=(8, 0))
+        self._send_row = send_row
+        ttk.Label(send_row, text="SEND TO", style="CardTitle.TLabel").pack(side="left", anchor="center",
+                                                                         padx=(0, 12))
+        self.targets_frame = tk.Frame(send_row, bg=cbg, height=self._send_to_area_height())
         self.targets_frame.pack(side="left", fill="x", expand=True)
         self.targets_frame.pack_propagate(False)
         self._target_chips: list = []
         self._chip_layout_key = None
         self.targets_frame.bind("<Configure>", lambda _e: self._layout_target_chips())
-
-        # Alert sound | Volume — one horizontal strip under Send to.
-        _sc = RoundedCard(bottom, bg=cbg, outer_bg=abg, padding=10)
-        _sc.pack(fill="x")
-        self._cards.append(_sc)
-        st = _sc.inner_frame
-        ttk.Label(st, text="ALERT SOUND", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
-        ttk.Label(st, text="VOLUME", style="CardTitle.TLabel").grid(row=0, column=1, sticky="w", padx=(24, 0),
-                                                                    pady=(0, 4))
-        sound_row = tk.Frame(st, bg=cbg)
-        sound_row.grid(row=1, column=0, sticky="ew")
-        self.sound_combo = ttk.Combobox(
-            sound_row, textvariable=self.alert_sound_var, values=ALERT_SOUND_OPTIONS, state="readonly", width=18
-        )
-        self.sound_combo.pack(side="left", fill="x", expand=True)
-        prev_btn = IconButton(
-            sound_row, t,
-            command=lambda: self._play_alert_sound(
-                self.alert_sound_var.get(), int(self.alert_volume_var.get())
-            ),
-        )
-        prev_btn.pack(side="left", padx=(8, 0))
-        self._themed_widgets.append(prev_btn)
-        self._volume_scale = VolumeSlider(st, self.alert_volume_var, t, on_release=self._persist_form)
-        self._volume_scale.grid(row=1, column=1, sticky="ew", padx=(24, 0))
-        self._themed_widgets.append(self._volume_scale)
-        st.grid_columnconfigure(0, weight=2)
-        st.grid_columnconfigure(1, weight=3, minsize=150)
         # The station-name picker only exists while the station dialog is open.
         self.label_combo = None
         self._refresh_target_checkboxes([])
@@ -5310,6 +5305,31 @@ class ChairsideReadyAlertApp:
     def _on_station_label_selected(self, _event=None) -> None:
         self._commit_station_label_if_changed()
 
+    def _fit_window_to_content(self, initial: bool = True) -> None:
+        """Size the window from what the layout actually needs (header, Ready
+        log showing the newest card + 3 rows, the bottom panel), capped to
+        the usable screen. The minimum height keeps those 4 log lines
+        visible unless the screen itself is shorter. Runs once at startup
+        and again after the first draw (a few widgets settle late); the
+        second pass only raises the minimum / grows a too-short window."""
+        try:
+            self.root.update_idletasks()
+            need_w = self.root.winfo_reqwidth()
+            need_h = self.root.winfo_reqheight()
+            cur_h = self.root.winfo_height()
+        except tk.TclError:
+            return
+        avail_w, avail_h = _usable_screen_size(self.root)
+        min_h = max(300, min(need_h, avail_h))
+        self.root.minsize(min(max(640, need_w), avail_w), min_h)
+        if initial:
+            h = min(need_h + _px(30), avail_h)
+            w = min(max(820, need_w), avail_w)
+            self.root.geometry(f"{w}x{h}")
+            self.root.after(400, lambda: self._fit_window_to_content(initial=False))
+        elif cur_h < min_h:
+            self.root.geometry(f"{self.root.winfo_width()}x{min(need_h + _px(30), avail_h)}")
+
     def _prompt_station_setup_if_needed(self) -> None:
         """Fresh install: ask for this station's name once the main window is
         on screen."""
@@ -5502,7 +5522,7 @@ class ChairsideReadyAlertApp:
         if hasattr(self, "duplicate_name_label"):
             self.duplicate_name_label.configure(fg=color, bg=t["bg"])
             if self.duplicate_name_var.get():
-                self.duplicate_name_label.pack(anchor="w")
+                self.duplicate_name_label.pack(anchor="e")
             else:
                 self.duplicate_name_label.pack_forget()
 
