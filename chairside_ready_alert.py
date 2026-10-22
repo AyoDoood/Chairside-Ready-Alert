@@ -2138,7 +2138,7 @@ class ReadyButton(tk.Canvas):
     packing it with fill="y" makes it as tall as its panel."""
 
     def __init__(self, parent, theme: dict, text: str = "Ready", command=None) -> None:
-        self._gm = (_px(12), _px(4), _px(12), _px(12))  # glow margins l, t, r, b
+        self._gm = (_px(12), _px(1), _px(12), _px(12))  # glow margins l, t, r, b
         super().__init__(parent, height=_px(62), width=_px(300),
                          highlightthickness=0, bd=0, bg=theme["card_bg"], cursor="hand2")
         self._text = text
@@ -4798,7 +4798,7 @@ class ChairsideReadyAlertApp:
             self._set_ready_button_enabled(getattr(self, "_ready_button_enabled", True))
         # Update sound_row and targets_frame direct-color tk frames
         for f in (getattr(self, "_sound_strip", None), getattr(self, "_send_row", None),
-                  getattr(self, "_log_col", None)):
+                  getattr(self, "_ready_btn_spacer", None)):
             if f is not None:
                 f.configure(bg=card)
         if hasattr(self, "targets_frame"):
@@ -4882,7 +4882,15 @@ class ChairsideReadyAlertApp:
                                    self._header_sub_row, bottom)
 
         # Ready Messages — expanding right card
+        # Two side-by-side panels with matching tops and bottoms: Ready
+        # Messages (left, expands) and the Ready button (right). The button
+        # panel is packed first so it keeps its width when space is tight.
+        _bp = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=10)
+        _bp.pack(side="right", fill="y", padx=(4, 0))
+        _bp.fill_height = True
+        self._cards.append(_bp)
         _rc = RoundedCard(top_row, bg=cbg, outer_bg=abg, padding=10)
+        _rc._cv.configure(width=_px(300))  # canvas default (~380) would inflate the min width
         _rc.pack(side="left", fill="both", expand=True)
         self._cards.append(_rc)
         right = _rc.inner_frame
@@ -4895,33 +4903,37 @@ class ChairsideReadyAlertApp:
                                       fg=t["status"], bg=cbg,
                                       font=_ui_font(9, "bold"))
 
-        # Ready button on the right, as tall as the panel.
-        ready_btn = ReadyButton(right, t, text="Ready", command=self.send_ready_selected)
-        ready_btn.configure(width=_px(220), height=_px(60))
-        ready_btn.pack(side="right", fill="y", padx=(8, 0))
-
-        def _size_ready_btn(e: tk.Event) -> None:
-            # Width is ~36% of the panel (height already fills it via fill="y").
-            if e.widget is right and e.width > 40:
-                w = max(_px(180), min(_px(440), int(e.width * 0.36)))
-                if int(ready_btn.cget("width")) != w:
-                    ready_btn.configure(width=w)
-
-        right.bind("<Configure>", _size_ready_btn, add="+")
-        # Stash the Ready button reference so the whimsy animations can
-        # anchor "emerge from behind this widget" positioning to it.
-        self._ready_btn_widget = ready_btn
-
-        self._log_col = tk.Frame(right, bg=cbg)
-        self._log_col.pack(side="left", fill="both", expand=True)
-        self._ready_messages_header = ttk.Label(self._log_col, text="READY MESSAGES",
+        self._ready_messages_header = ttk.Label(right, text="READY MESSAGES",
                                                 style="CardTitle.TLabel")
         self._ready_messages_header.pack(anchor="w")
 
         # The inner frame has a natural height only, so the log gets its
         # height from the card: fill the card canvas vertically.
-        self.log = ReadyLog(self._log_col, t)
+        self.log = ReadyLog(right, t)
         self.log.pack(fill="both", expand=True, pady=(4, 0))
+
+        # Ready button panel. A spacer the height of the "READY MESSAGES"
+        # title keeps the button's top level with the top of the log.
+        bp = _bp.inner_frame
+        self._ready_btn_spacer = tk.Frame(
+            bp, bg=cbg, height=self._ready_messages_header.winfo_reqheight() + 4)
+        self._ready_btn_spacer.pack(fill="x")
+        ready_btn = ReadyButton(bp, t, text="Ready", command=self.send_ready_selected)
+        ready_btn.configure(width=_px(220), height=_px(60))
+        ready_btn.pack(fill="both", expand=True)
+        # Stash the Ready button reference so the whimsy animations can
+        # anchor "emerge from behind this widget" positioning to it.
+        self._ready_btn_widget = ready_btn
+
+        def _size_ready_panel(e: tk.Event) -> None:
+            # Button panel is ~34% of the row's width; its height follows the row.
+            if e.widget is top_row and e.width > 40:
+                w = max(_px(200), min(_px(470), int(e.width * 0.34)))
+                if int(_bp._cv.cget("width")) != w:
+                    _bp._cv.configure(width=w)
+
+        top_row.bind("<Configure>", _size_ready_panel, add="+")
+        _bp._cv.configure(width=_px(240))
         _rc.fill_height = True
 
         # Bottom panel: Sound + Volume on one line, then the Send to computers.
